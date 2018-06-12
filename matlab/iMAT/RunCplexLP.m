@@ -19,7 +19,7 @@ function [lp_model] = RunCplexLP (lp_model, print_level)
     ILOGcplex.Model.rhs   = lp_model.rowub;
     ind = find(-lp_model.c==1);
     
-    % set the print level
+    % parameters
     if print_level==0
         ILOGcplex.DisplayFunc=[];
     else
@@ -28,6 +28,7 @@ function [lp_model] = RunCplexLP (lp_model, print_level)
         ILOGcplex.Param.simplex.display.Cur = print_level;
         ILOGcplex.Param.sifting.display.Cur = print_level;
     end
+    ILOGcplex.Param.threads.Cur = 1; % single thread
 
     % Optimize the problem
     ILOGcplex.solve();

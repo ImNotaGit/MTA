@@ -1,8 +1,8 @@
-function warmup_points = model_sampling_warmup(model, points_count, is_verbose, lp_solver)
-    if (nargin < 2)
+function warmup_points = model_sampling_warmup(model, lp_solver, points_count, is_verbose)
+    if (nargin < 3)
         points_count = 5000;
     end
-    if (nargin < 3)
+    if (nargin < 4)
         is_verbose = false;
     end
 
@@ -20,7 +20,7 @@ function warmup_points = model_sampling_warmup(model, points_count, is_verbose, 
     if is_verbose
         fprintf('start generating warmup points\n')
     end
-    for i = 1:points_count
+    parfor i = 1:points_count
         if (i <= orth_points_count)
             % Ensure that each direction is used at least once
             orth_point_idx = orth_point_order(i);

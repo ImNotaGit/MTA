@@ -24,6 +24,7 @@ function [lp_model] = RunGurobiLP (lp_model, print_level)
         params.DisplayInterval = 5;
     end
     params.Method = -1; % automatic
+    params.Threads = 1; % single thread
 
     % call the solver
     resultgurobi = gurobi(model, params);

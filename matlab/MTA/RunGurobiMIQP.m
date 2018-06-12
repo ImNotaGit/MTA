@@ -28,6 +28,7 @@ function [qp_model] = RunGurobiMIQP (qp_model, print_level)
     end
     params.Method = -1; % automatic
     params.TimeLimit =120;
+    params.Threads = 1; % single thread
 
     % call the solver
     resultgurobi = gurobi(model, params);

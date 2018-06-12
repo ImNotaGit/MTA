@@ -47,8 +47,7 @@ fprintf('start sampling\n');
 % Allocate memory for all points
 points = zeros(nRxns,pointsCount); 
 
-pointCount = 1;
-while pointCount <= pointsCount
+parfor pointCount = 1:pointsCount
 
     % Create the random step size vector
     randVector = rand(stepsPerPoint,1);
@@ -131,8 +130,6 @@ while pointCount <= pointsCount
 
     % Add the current point to points
     points(:,pointCount) = curPoint;
-
-    pointCount = pointCount + 1;
 
 end % Points
 state.centerPoint = centerPoint;

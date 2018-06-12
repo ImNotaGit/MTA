@@ -27,6 +27,7 @@ function [qp_model] = RunCplexMIQP (qp_model, print_level)
 
     % parameters
     ILOGcplex.Param.timelimit.Cur = 120;
+    ILOGcplex.Param.threads.Cur = 1; % single thread
 
     % Optimize the problem
     ILOGcplex.solve();

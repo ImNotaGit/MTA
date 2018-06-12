@@ -69,12 +69,17 @@ switch solver
         solv = @RunGurobiMIQP;
 end
 
-for i=1:length(rxns_to_delete)
+LB = model.lb;
+UB = model.ub;
+
+parfor i=1:length(rxns_to_delete)
     i
+    model.lb = LB;
+    model.ub = UB;
     
     %Performing the KO
-    model.lb(rxns_to_delete(i)) = 0;  % also run with these lines commented out and only for once (can do this by setting rxns_to_delete to 1), meaning no reaction is KOed, and the output score as control score
-    model.ub(rxns_to_delete(i)) = 0;  % ditto
+    model.lb(rxns_to_delete(i)) = 0;
+    model.ub(rxns_to_delete(i)) = 0;
     
     %Running the optimization
     Res = solv(model,0);

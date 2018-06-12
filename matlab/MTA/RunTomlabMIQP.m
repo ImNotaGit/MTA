@@ -18,6 +18,7 @@ x_min = x_L; x_max = x_U;
 F = qp_model.F;
 Prob = miqpAssign(F, c, A, b_L, b_U, x_L, x_U, [],IntVars,[],[],[], Name,[],[]);
 Prob.MIP.cpxControl.TILIM = 120;
+Prob.MIP.cpxControl.THREADS = 1; % single thread
 qp_model.tomlab_result = tomRun('cplex', Prob, print_level);
 qp_model.result_vector = qp_model.tomlab_result.x_k;
 qp_model.result_opt = qp_model.tomlab_result.f_k;

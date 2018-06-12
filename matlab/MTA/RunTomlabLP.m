@@ -24,6 +24,7 @@ function [lp_model] = RunTomlabLP (lp_model, print_level)
     
     % Formulating the lp problem struct
     Prob = lpAssign(c, A, b_L, b_U, x_L, x_U, x_0, Name, [], [], [], x_min, x_max, [], []);
+    Prob.MIP.cpxControl.THREADS = 1; % single thread
 
     % Calling driver routine tomRun to run the solver.
     lp_model.tomlab_result = tomRun('cplex', Prob, print_level);
