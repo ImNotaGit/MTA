@@ -1,4 +1,4 @@
-function [points state] = model_sampling_ACHR(model,warmupPoints, pointsCount, stepsPerPoint, state)
+function [points, state] = model_sampling_ACHR(model,warmupPoints, pointsCount, stepsPerPoint, state)
 % ACHRSampler Artificial Centering Hit-and-Run sampler
 %
 % ACHRSampler(model,warmupPoints,fileName,nFiles,pointsPerFile,stepsPerPoint,initPoint)
@@ -10,8 +10,6 @@ function [points state] = model_sampling_ACHR(model,warmupPoints, pointsCount, s
 % initPoint     Initial point (optional)
 %
 % Markus Herrgard, Gregory Hannum, Ines Thiele, Nathan Price 4/14/06
-
-warning off MATLAB:divideByZero;
 
 if isfield(model, 'N')
     N = model.N;
@@ -47,7 +45,8 @@ fprintf('start sampling\n');
 % Allocate memory for all points
 points = zeros(nRxns,pointsCount); 
 
-parfor pointCount = 1:pointsCount
+pointCount = 1;
+while pointCount <= pointsCount
 
     % Create the random step size vector
     randVector = rand(stepsPerPoint,1);
@@ -130,6 +129,8 @@ parfor pointCount = 1:pointsCount
 
     % Add the current point to points
     points(:,pointCount) = curPoint;
+
+    pointCount = pointCount + 1;
 
 end % Points
 state.centerPoint = centerPoint;

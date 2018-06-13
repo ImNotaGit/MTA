@@ -33,9 +33,10 @@ function warmup_points = model_sampling_warmup(model, lp_solver, points_count, i
         r = rand;
         the_point = orth_point * r + random_point * (1 - r);
         warmup_points(:, i) = the_point;
-        if is_verbose && mod(i, 100) == 0
-            print_progress(i / points_count);
-        end
+        % if paralleling, print_progress does not print in real-time, so disabled
+        %if is_verbose && mod(i, 100) == 0
+        %    print_progress(i / points_count);
+        %end
     end
     if is_verbose
         fprintf('done generating warmup points\n')
@@ -53,24 +54,24 @@ function points = get_orth_points(model, is_verbose, lp_solver)
         fprintf('start generating orthogonal warmup points\n');
     end
     rxns_count = length(model.rxns);
-    points = zeros(rxns_count, 2 * rxns_count);
-    for rxn_idx = 1:rxns_count
+    points1 = zeros(rxns_count, rxns_count);
+    points2 = zeros(rxns_count, rxns_count);
+    parfor rxn_idx = 1:rxns_count
         % Pick the next flux to optimize, cycles though each reaction
         % alternates minimization and maximization for each cycle
-        for max_min = [1 -1]
-          % Set the objective function
-          c = zeros(size(model.c));
-          c(rxn_idx) = max_min;
-
-          % Determine the max or min for the rxn
-          point = get_opt_point(model, c, lp_solver);
-
-          points(:, rxn_idx + rxns_count * (max_min + 1) / 2) = point;
-        end
-        if is_verbose && mod(rxn_idx, 100) == 0
-            print_progress(rxn_idx / rxns_count);
-        end
+        c = zeros(size(model.c));
+        c(rxn_idx) = -1;
+        point = get_opt_point(model, c, lp_solver);
+        points1(:, rxn_idx) = point;
+        c(rxn_idx) = 1;
+        point = get_opt_point(model, c, lp_solver);
+        points2(:, rxn_idx) = point;
+        % if paralleling, print_progress does not print in real-time, so disabled
+        %if is_verbose && mod(rxn_idx, 100) == 0
+        %    print_progress(rxn_idx / rxns_count);
+        %end
     end
+    points = [points1 points2];
     fprintf('done generating orthogonal warmup points\n');
 end
 

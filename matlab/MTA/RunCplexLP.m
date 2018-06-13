@@ -22,11 +22,6 @@ function [lp_model] = RunCplexLP (lp_model, print_level)
     % parameters
     if print_level==0
         ILOGcplex.DisplayFunc=[];
-    else
-        % print level
-        ILOGcplex.Param.barrier.display.Cur = print_level;
-        ILOGcplex.Param.simplex.display.Cur = print_level;
-        ILOGcplex.Param.sifting.display.Cur = print_level;
     end
     ILOGcplex.Param.threads.Cur = 1; % single thread
 
