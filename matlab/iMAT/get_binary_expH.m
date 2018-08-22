@@ -2,7 +2,7 @@ function [bin] = get_binary_expH(model, exp, stat)
 % function for discretizing gene expressions of the "source state" into low/medium/high (-1/0/1) bins
 % model: the metabolic model
 % exp: vector/matrix of expression levels of the genes in the source state, with the same length and in the same order as model.genes_unique_names, 1496 for recon1 (model.mat)
-% stat==0: discretize for one sample; stat==1: for multiple samples, in which case, exp should be a matrix where the columns are samples
+% stat==0: discretize for one sample based on 25% and 75% quantile; stat==1: Noam mentioned that it's for multiple samples where exp is a matrix, but after examining the code it seems that it's just another way of discretizing for one sample: based on mean +- 0.7sd for the greater than 0 values.
 
 if stat==0
     top = quantile(exp,0.75);

@@ -5,7 +5,7 @@
 %                    flux should increase/decrease (1,-1, respectively) or
 %                    remain constant (0) in order to transform to the
 %                    target state
-%                4. rxns_to_delete - A set of reactions to KO, for all reactions, set it to 1:3788 for recon1 (model.mat)
+%                4. rxns_to_delete - A set of reactions to KO, for all reactions, set it to 0:3788 for recon1 (model.mat); 0 means also run the control, where no reaction is deleted
 %Output - 1. score - The score obtained by MTA following the KO of each of
 %                    the reactions in rxns_to_delete
 %         2. stat -  The solver's returned status for each KO
@@ -71,9 +71,12 @@ end
 parfor i=1:length(rxns_to_delete)
     tmp = model;
     
-    %Performing the KO
-    tmp.lb(rxns_to_delete(i)) = 0;
-    tmp.ub(rxns_to_delete(i)) = 0;
+    if rxns_to_delete(i)~=0
+        % When rxns_to_delete(i)==0, it means the control where no reaction is deleted;
+        % when it's not 0, perform the KO
+        tmp.lb(rxns_to_delete(i)) = 0;
+        tmp.ub(rxns_to_delete(i)) = 0;
+    end
     
     %Running the optimization
     Res = solv(tmp,0);

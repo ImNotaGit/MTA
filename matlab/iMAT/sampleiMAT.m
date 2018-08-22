@@ -1,7 +1,7 @@
 function[sample_points,v_ref] = sampleiMAT(model, discrete_data, milp_solver, lp_solver)
 % function for running iMAT
 % model: the metabolic model
-% discrete_data: vector of discretized gene expression of the source state, i.e. the output from 01_get_binary_expH.m
+% discrete_data: vector of discretized gene expression of the source state, i.e. the output from get_binary_expH.m
 
 Private_DefineParameters;
 
