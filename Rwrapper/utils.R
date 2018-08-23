@@ -236,7 +236,7 @@ init.matlab.for.mta <- function(server=matlab, cplex=cplex.path, tomlab=tomlab.p
   evaluate(server, paste("addpath", cplex))
   # initiate tomlab
   evaluate(server, paste("cd", tomlab))
-  evaluate(server, "install")
+  evaluate(server, "startup")
   # initiate gurobi
   evaluate(server, paste("cd", gurobi))
   evaluate(server, "gurobi_setup")
