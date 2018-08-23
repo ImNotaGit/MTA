@@ -22,3 +22,5 @@ addpath(fullfile(mta_path, 'MTA'))
 addpath(fullfile(mta_path, 'models'))
 % return to current dir
 cd(cur_dir)
+
+clear mta_path cplex_path tomlab_path gurobi_path cobra_path cur_dir;
