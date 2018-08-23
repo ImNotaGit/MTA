@@ -159,6 +159,7 @@ de <- function(dat, pheno, model="~.", coef) {
 discrt.dflux.for.mta <- function(de.res, topn=100, model.data=model) {
   # get the directions of reaction changes as input for MTA
   # de.res: DE result as output from de(), at most topn genes in either direction with fdr<0.1 are selected then mapped to reaction changes, and the resulting vector is returned; the number of changed reactions will be printed
+  # NOTE that by default, dflux seeks to REVERSE the DE changes!
   # as a rule of thumb, try different topn values so that about 100 changed reactions in either direction are obtained
   
   # get gene DE vector
@@ -177,7 +178,7 @@ discrt.dflux.for.mta <- function(de.res, topn=100, model.data=model) {
   nneg <- sum(vec==-1L)
   cat(sprintf("Top %d DE genes in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", topn, npos, nneg))
   
-  return(vec)
+  return(-vec)
 }
 
 discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, model.data=model) {
@@ -282,9 +283,10 @@ imat <- function(expr, vout1="imat_v", vout2="imat_sampl_pnts", model="model", m
   # run iMAT
   evaluate(server, sprintf("[%s, %s] = sampleiMAT(%s, %s, '%s', '%s');", vout2, vout1, model, expr.n, milp.solver, lp.solver))
   
-  # retrieve results from MATLAB
-  res <- getVariable(server, c(vout1, vout2))
-  list(v=as.vector(res[[1]]), sampl.pnts=res[[2]])
+  # retrieve results from MATLAB, need to do it separately otherwise the order will not keep as is.
+  res1 <- getVariable(server, vout1)
+  res2 <- getVariable(server, vout2)
+  list(v=as.vector(res1[[1]]), sampl.pnts=res2[[1]])
 }
 
 mta <- function(v.ref, dflux, del=NULL, vout1="mta_scores", vout2="mta_stats", model="model", solver="cplex", server=matlab) {
@@ -333,7 +335,9 @@ mta <- function(v.ref, dflux, del=NULL, vout1="mta_scores", vout2="mta_stats", m
   # run MTA
   evaluate(server, sprintf("[%s, %s] = MTA(%s, %s, %s, %s, '%s');", vout1, vout2, model, v.ref.n, dflux.n, del.n, solver))
   
-  # retrieve results from MATLAB
-  res <- getVariable(server, c(del.n, vout1, vout2))
-  data.table(del.rxn=as.vector(res[[1]]), score=as.vector(res[[2]]), stat=as.vector(res[[3]]))
+  # retrieve results from MATLAB, need to do it separately otherwise the order will not keep as is.
+  res1 <- getVariable(server, del.n)
+  res2 <- getVariable(server, vout1)
+  res3 <- getVariable(server, vout2)
+  data.table(del.rxn=as.vector(res1[[1]]), score=as.vector(res2[[1]]), stat=as.vector(res3[[1]]))
 }
