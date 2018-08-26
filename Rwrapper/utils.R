@@ -341,3 +341,39 @@ mta <- function(v.ref, dflux, del=NULL, vout1="mta_scores", vout2="mta_stats", m
   res3 <- getVariable(server, vout2)
   data.table(del.rxn=as.vector(res1[[1]]), score=as.vector(res2[[1]]), stat=as.vector(res3[[1]]))
 }
+
+make.ortho.dflux <- function(seed=0, x) {
+  # generate random orthogonal dflux vectors to a given dflux vector, x
+  
+  # shuffle x
+  set.seed(seed); y <- sample(x)
+  # current inner product
+  k <- sum(x*y)
+  # if k happens to be 0, simply return y
+  if (k==0) return(y)
+  # if k is odd, we randomly swap a pair of y's where y0x!0 and y!0x0, so that we reduce one product-is-zero case; if it happens that no such case exists, we randomly swap a pair of y's where y0x0 and y!0x!0, so that we increase on product-is-zero case
+  if (k%%2==1) {
+    if (any(y==0 & x!=0)) {
+      set.seed(seed); p1 <- sample(which(y==0 & x!=0), 1)
+      set.seed(seed); p2 <- sample(which(y!=0 & x==0), 1)
+    } else {
+      set.seed(seed); p1 <- sample(which(y==0 & x==0), 1)
+      set.seed(seed); p2 <- sample(which(y!=0 & x!=0), 1)
+    }
+    tmp <- y[p1]
+    y[p1] <- y[p2]
+    y[p2] <- tmp
+  }
+  k <- sum(x*y)
+  # now the k should become even; randomly "flip" k/2 product-non-zero positions in the proper direction
+  set.seed(seed); fp <- sample(which(x*y==sign(k)), abs(k)/2)
+  y[fp] <- -y[fp]
+  # then randomly "flip" equal number of positions of product +1 and -1
+  set.seed(seed); nf <- sample(0:(sum(x*y!=0)/2), 1)
+  set.seed(seed); fpp <- sample(which(x*y==1), nf)
+  set.seed(seed); fpn <- sample(which(x*y==-1), nf)
+  fp <- c(fpp, fpn)
+  y[fp] <- -y[fp]
+  y
+}
+

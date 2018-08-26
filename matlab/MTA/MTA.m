@@ -17,10 +17,10 @@ alpha = 0.9;
 thr = 0.01; %threshold defining the the minimum required change for the integer constraints
 e_rxns = find(discrete_rxns_vector==1);
 r_rxns = find(discrete_rxns_vector==-1);
-s_rxns = find(discrete_rxns_vector==0 & model.c'~=1);
+s_rxns = find(discrete_rxns_vector==0 & model.c~=1);
 
-fwd = [intersect(find(v_ref' >= 0),e_rxns)  intersect(find(v_ref' < 0),r_rxns)];
-bck = [intersect(find(v_ref' <= 0),e_rxns)  intersect(find(v_ref' > 0),r_rxns)];
+fwd = [intersect(find(v_ref >= 0),e_rxns); intersect(find(v_ref < 0),r_rxns)];
+bck = [intersect(find(v_ref <= 0),e_rxns); intersect(find(v_ref > 0),r_rxns)];
 
 %Building the constraints matrix
 [~,n_s] = size(model.S);
@@ -36,7 +36,7 @@ for i=1:length(bck)
     model = addBCKCons(bck(i),v_ref(bck(i)),model,thr);
 end
 
-cons_rxns = [fwd bck];
+cons_rxns = [fwd; bck]';
 
 %Constructing the optimization integer vector
 [~,n] = size(model.S);
