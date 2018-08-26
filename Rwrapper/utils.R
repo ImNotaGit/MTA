@@ -1,11 +1,22 @@
 library(data.table)
 library(stringr)
 
-mta.path <- "/home/fountain/Documents/Projects/ourtools/MTA"
-cplex.path <- "/home/fountain/ibm/ILOG/CPLEX_Studio128/cplex/matlab/x86-64_linux"
-tomlab.path <- "/home/fountain/tomlab"
-gurobi.path <- "/home/fountain/gurobi800/linux64/matlab"
-cobra.path <- "/home/fountain/biocomp_tools/cobratoolbox"
+user <- system("whoami", intern=TRUE)
+if (user=="fountain") {
+  mta.path <- "/home/fountain/Documents/Projects/ourtools/MTA"
+  cplex.path <- "/home/fountain/ibm/ILOG/CPLEX_Studio128/cplex/matlab/x86-64_linux"
+  tomlab.path <- "/home/fountain/tomlab"
+  gurobi.path <- "/home/fountain/gurobi800/linux64/matlab"
+  cobra.path <- "/home/fountain/biocomp_tools/cobratoolbox"
+} else if (user=="kycheng") {
+  mta.path <- "/fs/cbcb-scratch/kycheng/MTA"
+  cplex.path <- "/cbcb/project2-scratch/kycheng/tools/ibm/ILOG/CPLEX_Studio128/cplex/matlab/x86-64_linux"
+  tomlab.path <- "/cbcb/project2-scratch/kycheng/tools/tomlab"
+  gurobi.path <- "/cbcb/project2-scratch/kycheng/tools/gurobi800/linux64/matlab"
+  cobra.path <- "/cbcb/project2-scratch/kycheng/tools/cobratoolbox"
+}
+rm(user)
+
 
 # recon model genes
 #library(R.matlab)
