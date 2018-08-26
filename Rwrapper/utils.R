@@ -240,21 +240,27 @@ stop.matlab <- function(server=matlab, save.log=NULL) {
   rm(list=as.character(substitute(server)), envir=.GlobalEnv)
 }
 
-init.matlab.for.mta <- function(server=matlab, cplex=cplex.path, tomlab=tomlab.path, gurobi=gurobi.path, cobra=cobra.path, mta=mta.path) {
-  # initialize the paths in MATLAB for running MTA
+init.matlab.for.mta <- function(server=matlab, cplex=cplex.path, tomlab=tomlab.path, gurobi=gurobi.path, cobra=NA, mta=mta.path) {
+  # initialize the paths in MATLAB for running MTA; to disable one solver, set to NA; cobratoolbox by default disabled, set it as cobra=cobra.path to enable it.
   
   if (!isOpen(server)) stop("The MATLAB server is not open.\n")
   # add cplex path
-  evaluate(server, paste("addpath", cplex))
+  if (!is.na(cplex)) evaluate(server, paste("addpath", cplex))
   # initiate tomlab
-  evaluate(server, paste("cd", tomlab))
-  evaluate(server, "startup")
+  if (!is.na(tomlab)) {
+    evaluate(server, paste("cd", tomlab))
+    evaluate(server, "startup")
+  }
   # initiate gurobi
-  evaluate(server, paste("cd", gurobi))
-  evaluate(server, "gurobi_setup")
+  if (!is.na(gurobi)) {
+    evaluate(server, paste("cd", gurobi))
+    evaluate(server, "gurobi_setup")
+  }
   # initiate cobratoolbox
-  evaluate(server, paste("cd", cobra))
-  evaluate(server, "initCobraToolbox")
+  if (!is.na(cobra)) {
+    evaluate(server, paste("cd", cobra))
+    evaluate(server, "initCobraToolbox")
+  }
   # add MTA paths
   evaluate(server, paste("addpath", file.path(mta, "matlab", "iMAT")))
   evaluate(server, paste("addpath", file.path(mta, "matlab", "MTA")))
