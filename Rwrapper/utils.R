@@ -162,7 +162,7 @@ de <- function(dat, pheno, model="~.", coef) {
   fit <- lmFit(mat, design)
   fit <- eBayes(fit)
   head(topTable(fit, coef=coef, number=Inf))
-  coef <- unique(as.data.table(topTable(fit, coef=coef, number=Inf)), by="ID") # a dirty way to remove duplicated genes...
+  coef <- as.data.table(topTable(fit, coef=coef, number=Inf))
   setnames(coef, c("id","log.fc","ave.expr","t","pval","padj","B"))
   return(coef)
 }
