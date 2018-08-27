@@ -167,7 +167,7 @@ de <- function(dat, pheno, model="~.", coef) {
   return(coef)
 }
 
-discrt.dflux.for.mta <- function(de.res, topn=100, model.data=model) {
+discrt.dflux.for.mta <- function(de.res, topn=100, padj.cutoff=0.1, model.data=model) {
   # get the directions of reaction changes as input for MTA
   # de.res: DE result as output from de(), at most topn genes in either direction with fdr<0.1 are selected then mapped to reaction changes, and the resulting vector is returned; the number of changed reactions will be printed
   # NOTE that by default, dflux seeks to REVERSE the DE changes!
@@ -179,7 +179,7 @@ discrt.dflux.for.mta <- function(de.res, topn=100, model.data=model) {
   de.res <- de.res[id %in% model.data$genes]
   de.res[, padj:=p.adjust(pval, method="BH")]
   de.res[, df:=as.integer(sign(log.fc))]
-  de.res <- rbind(de.res[padj<0.1 & log.fc<0][order(log.fc)][1:min(.N,topn)], de.res[padj<0.1 & log.fc>0][order(-log.fc)][1:min(.N,topn)])
+  de.res <- rbind(de.res[padj<padj.cutoff & log.fc<0][order(log.fc)][1:min(.N,topn)], de.res[padj<padj.cutoff & log.fc>0][order(-log.fc)][1:min(.N,topn)])
   df <- de.res$df
   names(df) <- de.res$id
   
