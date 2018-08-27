@@ -9,8 +9,9 @@
 %Output - 1. score - The score obtained by MTA following the KO of each of
 %                    the reactions in rxns_to_delete
 %         2. stat -  The solver's returned status for each KO
+%         3. v_res - The optimal flux vector returned by the solver for each KO, thus a vector of the number of reactions by the number of KO's
 
-function[score,stat] = MTA(model, v_ref, discrete_rxns_vector, rxns_to_delete, solver)
+function[score, stat, v_res] = MTA(model, v_ref, discrete_rxns_vector, rxns_to_delete, solver)
 
 DEFINE_PARAM;
 alpha = 0.9;
@@ -68,6 +69,8 @@ switch solver
         solv = @RunGurobiMIQP;
 end
 
+v_res = zeros([n length(rxns_to_delete)]);
+
 parfor i=1:length(rxns_to_delete)
     tmp = model;
     
@@ -82,6 +85,7 @@ parfor i=1:length(rxns_to_delete)
     Res = solv(tmp,0);
     
     stat(i)= Res.result_status;
+    v_res(:,i)=Res.result_vector;
     
     %Calculating the score
     [diff_change] = calculateDiff(v_ref,fwd,bck,cons_rxns,Res.result_vector);
