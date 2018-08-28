@@ -139,7 +139,7 @@ prep.data <- function(dat, log="default", norm.method="loess") {
       stop(sprintf("Loess normalization error: there are %d NA/NaN's in the data.\n", nna))
     } else mat <- normalize.loess(mat, log.it=FALSE)
   } else if (norm.method=="quantile") {
-    mat <- normalize.quantiles(mat)
+    mat <- limma::normalizeQuantiles(mat)
   } else cat("Normalization NOT performed.\n")
   
   # return
@@ -149,7 +149,7 @@ prep.data <- function(dat, log="default", norm.method="loess") {
   } else if (is.matrix(dat)) return(mat)
 }
 
-de <- function(dat, pheno, model="~.", coef) {
+de <- function(dat, pheno, model="~.", coef, robust=FALSE, trend=FALSE) {
   # differential expression analysis
   library(limma)
   
@@ -160,7 +160,7 @@ de <- function(dat, pheno, model="~.", coef) {
   
   design <- model.matrix(as.formula(model), pheno)
   fit <- lmFit(mat, design)
-  fit <- eBayes(fit)
+  fit <- eBayes(fit, robust=robust, trend=trend)
   head(topTable(fit, coef=coef, number=Inf))
   coef <- as.data.table(topTable(fit, coef=coef, number=Inf))
   setnames(coef, c("id","log.fc","ave.expr","t","pval","padj","B"))
