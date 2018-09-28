@@ -58,13 +58,13 @@ achr.sampling <- function(model, warmupPts, nPoints, stepsPerPoint, state=NULL) 
     dTol = 1e-14
 
     if (is.null(state)) {
-      centerPoint = apply(warmupPts, 1, mean)
-      totalStepCount = 0
-      prevPoint = centerPoint
+        centerPoint = apply(warmupPts, 1, mean)
+        totalStepCount = 0
+        prevPoint = centerPoint
     } else {
-      centerPoint = state$centerPoint
-      totalStepCount = state$totalStepCount
-      prevPoint = state$prevPoint
+        centerPoint = state$centerPoint
+        totalStepCount = state$totalStepCount
+        prevPoint = state$prevPoint
     }
     nRxns = ncol(model$S)
     W = ncol(warmupPts)
@@ -80,8 +80,8 @@ achr.sampling <- function(model, warmupPts, nPoints, stepsPerPoint, state=NULL) 
             xa = warmupPts[, a]
             u = (xa - centerPoint)
             u = u/norm(as.matrix(u), "F")
-            distUb = (uppbnd(model) - prevPoint)
-            distLb = (prevPoint - lowbnd(model))
+            distUb = (model$ub - prevPoint)
+            distLb = (prevPoint - model$lb)
             validDir = ((distUb > dTol) & (distLb > dTol))
             posDirn = which(u[validDir] > uTol)
             negDirn = which(u[validDir] < -uTol)
@@ -91,15 +91,12 @@ achr.sampling <- function(model, warmupPts, nPoints, stepsPerPoint, state=NULL) 
             minStepVec = c(minStepTemp[posDirn], maxStepTemp[negDirn])
             maxStep = min(maxStepVec)
             minStep = max(minStepVec)
-            print(sprintf("step %d: %f  %f", stepCount, minStep, 
-                maxStep))
-            if ((abs(minStep) < maxMinTol && abs(maxStep) < maxMinTol) || 
-                (minStep > maxStep)) {
+            print(sprintf("step %d: %f  %f", stepCount, minStep, maxStep))
+            if ((abs(minStep) < maxMinTol && abs(maxStep) < maxMinTol) || (minStep > maxStep)) {
                 print(sprintf("Warning %f %f\n", minStep, maxStep))
                 next
             }
-            stepDist = randVector[stepCount] * (maxStep - minStep) + 
-                minStep
+            stepDist = randVector[stepCount] * (maxStep - minStep) + minStep
             curPoint = matrix(prevPoint + stepDist * u, ncol = 1)
             if ((totalStepCount%%stepsPerPoint) == 0) {
                 print(sprintf("Sampling progress: %5.2f%%\n", 100*(stepCount+pointCount*stepsPerPoint)/(nPoints*stepsPerPoint)))
@@ -108,21 +105,16 @@ achr.sampling <- function(model, warmupPts, nPoints, stepsPerPoint, state=NULL) 
                   nProj = nProj + 1
                 }
             }
-            curPoint[curPoint > uppbnd(model)] = uppbnd(model)[curPoint > 
-                uppbnd(model)]
-            curPoint[curPoint < lowbnd(model)] = lowbnd(model)[curPoint < 
-                lowbnd(model)]
+            curPoint[curPoint > model$ub] = model$ub[curPoint > model$ub]
+            curPoint[curPoint < model$lb] = model$lb[curPoint < model$lb]
             prevPoint = curPoint
             stepCount = stepCount + 1
             totalStepCount = totalStepCount + 1
-            centerPoint = ((W + totalStepCount) * centerPoint + 
-                curPoint)/(W + totalStepCount + 1)
+            centerPoint = ((W + totalStepCount) * centerPoint + curPoint)/(W + totalStepCount + 1)
         }
         Points[, pointCount] = curPoint
         pointCount = pointCount + 1
     }
-
-    list(state=list(centerPoint=centerPoint, totalStepCount=totalStepCount, prevPoint=prevPoint),
-         points=Points)
+    list(state=list(centerPoint=centerPoint, totalStepCount=totalStepCount, prevPoint=prevPoint), points=Points)
 }
 
