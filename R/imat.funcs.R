@@ -3,10 +3,11 @@ library(Rcplex)
 source("utils.R")
 source("sampling.funcs.R")
 
-imat.params <- list(flux.act=1, flux.inact=0.1, flux.bound=1000, n.sampl=2000, n.warmup=5000, n.sampl.state=1000, steps.per.pnt=400)
+imat.params <- list(flux.act=1, flux.inact=0.1, flux.bound=1000)
 milp.params <- list(trace=1, tilim=120, nodesel=0)
+sampl.params <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400)
 
-imat <- function(model, expr, imat.params=imat.params, milp.params=milp.params) {
+imat <- function(model, expr, imat.params=imat.params, milp.params=milp.params, sampl.params=sampl.params) {
   
   # model as environment
   model <- as.environment(model)
@@ -21,9 +22,9 @@ imat <- function(model, expr, imat.params=imat.params, milp.params=milp.params) 
   update.model(model, imat.model, imat.params) # update model in place
 
   # sample the metabolic model to get the fluxes of the reference state
-  model$sampl.vs <- sample.model(model, imat.params)
-  model$v.mean <- colMeans(model$sampl.vs)
-
+  sample.model(model, sampl.params) # update model in place
+  
+  # model back to list
   as.list(model)
 }
 
@@ -72,7 +73,7 @@ form.imat <- function(model, expr, params) {
   rowlb <- c(model$b, rep(-params$flux.bound, n))
   rowub <- c(model$b, rep(params$flux.bound, n))
   n <- ncol(S) - n.rxns
-  c <- rep(0:1, c(n.rxns, n))
+  c <- rep(c(0,1), c(n.rxns, n))
   vtype <- ifelse(c==1, "I", "C")
   lb <- c(model$lb, rep(0, n))
   ub <- c(model$ub, rep(1, n))
@@ -118,5 +119,4 @@ update.model <- function(model, imat.res, params) {
   model$ub[inact] <- params$flux.inact
   model$lb[inact.rev] <- -params$flux.inact
 }
-
 

@@ -62,10 +62,10 @@ form.mta <- function(model, v.ref, dflux, params) {
 run.mta <- function(model, del, params) {
   
   names(del) <- del
-  res <- lapply(del, function(i) {
+  res <- mclapply(del, function(i) {
     miqp.res <- run.miqp(model, i, params)
     analyz.mta.res(model, miqp.res)
-  })
+  }, mc.cores=detectCores())
   rbindlist(res, idcol="del.rxn")
 }
 
@@ -78,9 +78,9 @@ run.miqp <- function(model, del, params) {
   bvec <- c(model$rowlb, model$rowub)
   sense <- rep(c("G","L"), c(length(model$rowlb), length(model$rowub)))
   lb <- model$lb
-  lb[del] <- 0
+  lb[del] <- 0 # if del==0, meaning do no delete any reaction as a control, nothing will be changed to lb
   ub <- model$ub
-  ub[del] <- 0
+  ub[del] <- 0 # if del==0, meaning do no delete any reaction as a control, nothing will be changed to ub
   vtype <- model$vtype
   
   res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=1)

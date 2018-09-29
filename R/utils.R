@@ -4,12 +4,12 @@ library(stringr)
 
 #### ---- metabolic model utils ----
 
-discrt.genes2rxns <- function(vec, type="stat", model.data=model) {
+discrt.genes2rxns <- function(vec, type="stat", model) {
   # map a vector of values -1/0/1 either meant to be levels or direction of changes of genes to those of the reactions in the metabolic model
-  # vec is a named vector of -1/0/1, names being gene symbol
+  # vec is a named vector of -1/0/1, names being gene symbol; or if it's unnamed and length being model$genes, assume it's already in the same order as model$genes
   # type=="stat" for vec as gene levels, type=="diff" for vec as directions of changes
 
-  x <- vec[model.data$genes]
+  if (is.null(names(vec)) && length(vec)==length(model$genes)) x <- vec else x <- vec[model$genes]
   if (type=="stat") {
     `&` <- min
     `|` <- max
@@ -17,15 +17,15 @@ discrt.genes2rxns <- function(vec, type="stat", model.data=model) {
     `&` <- function(a,b) ifelse(a==b, a, 0)
     `|` <- function(a,b) ifelse(a==b, a, a+b)
   }
-  res <- sapply(model.data$rules, function(i) eval(parse(text=i)))
+  res <- sapply(model$rules, function(i) eval(parse(text=i)))
   res[is.na(res)] <- 0 # NA's will be replaced by zeros!
   as.integer(unname(res))
 }
 
-rxns2genes <- function(vec, model.data=model) {
+rxns2genes <- function(vec, model) {
   # given a numerical vector corresponding to the reaction indeces in the model, map each of them to gene names, return as a list (or a simple vector for a single reaction); NA will be returned for reaction indeces outside the proper range (including 0)
   vec[vec==0] <- NA
-  res <- lapply(str_extract_all(model.data$rules[vec], "[1-9][0-9]*"), function(x) unique(model.data$genes[as.numeric(x)]))
+  res <- lapply(str_extract_all(model$rules[vec], "[1-9][0-9]*"), function(x) unique(model$genes[as.numeric(x)]))
   if (length(res)==1) res <- res[[1]]
   return(res)
 }
@@ -97,7 +97,7 @@ de <- function(dat, pheno, model="~.", coef, robust=FALSE, trend=FALSE) {
   return(coef)
 }
 
-discrt.dflux.for.mta <- function(de.res, topn=100, padj.cutoff=0.1, model.data=model) {
+discrt.dflux.for.mta <- function(de.res, topn=100, padj.cutoff=0.1, model) {
   # get the directions of reaction changes as input for MTA
   # de.res: DE result as output from de(), at most topn genes in either direction with fdr<0.1 are selected then mapped to reaction changes, and the resulting vector is returned; the number of changed reactions will be printed
   # NOTE that by default, dflux seeks to REVERSE the DE changes!
@@ -106,7 +106,7 @@ discrt.dflux.for.mta <- function(de.res, topn=100, padj.cutoff=0.1, model.data=m
   # get gene DE vector
   #ex.genes <- unique(model.data$genes[table(unlist(str_extract_all(model.data$rules, "[1-9][0-9]*")))>10]) # genes mapped to > 10 reactions are excluded, this was in the original MATLAB code but not actually used.
   #de.res <- de.res[id %in% model.data$genes & !id %in% ex.genes]
-  de.res <- de.res[id %in% model.data$genes]
+  de.res <- de.res[id %in% model$genes]
   de.res[, padj:=p.adjust(pval, method="BH")]
   de.res[, df:=as.integer(sign(log.fc))]
   de.res <- rbind(de.res[padj<padj.cutoff & log.fc<0][order(log.fc)][1:min(.N,topn)], de.res[padj<padj.cutoff & log.fc>0][order(-log.fc)][1:min(.N,topn)])
@@ -114,15 +114,16 @@ discrt.dflux.for.mta <- function(de.res, topn=100, padj.cutoff=0.1, model.data=m
   names(df) <- de.res$id
   
   # map to reactions
-  vec <- discrt.genes2rxns(df, type="diff", model.data=model.data)
+  vec <- discrt.genes2rxns(df, type="diff", model=model)
   npos <- sum(vec==1L)
   nneg <- sum(vec==-1L)
   cat(sprintf("Top %d DE genes in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", topn, npos, nneg))
-  
+  cat("Note that MTA will seek to reverse these changes!!! I.e. dflux representing the reverse direction is returned.\n")
+
   return(-vec)
 }
 
-discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, model.data=model) {
+discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, model) {
   # produce input vector for iMAT:
   # average across all samples in the data into a single vector of expression values of all genes, then select only those genes in the model, then discretize the expression values into low (-1L), medium (0L), and high (1L), with missing genes (i.e. model genes that are not in the expression data) set to 0L.
   
@@ -132,7 +133,7 @@ discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, model.data=model) {
   } else if (is.matrix(dat)) mat <- dat
   
   vec <- rowMeans(mat)
-  vec <- vec[model.data$genes]
+  vec <- vec[model$genes]
   na.idx <- is.na(vec)
   cat(sprintf("%d model genes not in the expression data.\n", sum(na.idx)))
   qlo <- quantile(vec, q.lo, na.rm=TRUE)
