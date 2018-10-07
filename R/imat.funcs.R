@@ -1,10 +1,10 @@
 library(Matrix)
-library(Rcplex)
+library(Rcplex.my)
 source("utils.R")
 source("sampling.funcs.R")
 
 imat.params <- list(flux.act=1, flux.inact=0.1, flux.bound=1000)
-milp.params <- list(trace=1, tilim=120, nodesel=0)
+milp.params <- list(trace=1, maxcalls=5000, tilim=120, nodesel=0)
 sampl.params <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400)
 
 imat <- function(model, expr, imat.params=imat.params, milp.params=milp.params, sampl.params=sampl.params) {
@@ -24,6 +24,9 @@ imat <- function(model, expr, imat.params=imat.params, milp.params=milp.params, 
   # sample the metabolic model to get the fluxes of the reference state
   sample.model(model, sampl.params) # update model in place
   
+  # force close CPLEX
+  Rcplex.close()
+
   # model back to list
   as.list(model)
 }
@@ -87,7 +90,6 @@ form.imat <- function(model, expr, params) {
 
 run.imat <- function(model, params) {
   cvec <- model$c
-  Qmat <- NULL
   objsense <- "max"
   Amat <- rbind(model$S, model$S)
   bvec <- c(model$rowlb, model$rowub)
@@ -96,8 +98,8 @@ run.imat <- function(model, params) {
   ub <- model$ub
   vtype <- model$vtype
   
-  res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=1)
-  if (res$status!=101) stop("iMAT: Failed running MILP. Solver status: ", res$status, ".\n")
+  res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
+  if (res$status!=101) stop("iMAT: Potential problems running MILP. Solver status: ", res$status, ".\n")
 
   model$milp.out <- res # model is an environment, so will be modified outside this function
 }

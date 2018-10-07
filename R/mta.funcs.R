@@ -1,10 +1,10 @@
 library(Matrix)
-library(Rcplex)
+library(Rcplex.my)
 library(data.table)
 library(parallel)
 
 mta.params <- list(v.min=-50, v.max=50, v.min.c=-1000, v.max.c=1000, alpha=0.9, epsil=0.01)
-miqp.params <- list(trace=1, tilim=120)
+miqp.params <- list(trace=1, tilim=120, threads=1)
  
 mta <- function(model, v.ref, dflux, del, mta.params=mta.params, miqp.params=miqp.params) {
   
@@ -66,6 +66,10 @@ run.mta <- function(model, del, params) {
     miqp.res <- run.miqp(model, i, params)
     analyz.mta.res(model, miqp.res)
   }, mc.cores=detectCores())
+
+  # force close CPLEX
+  Rcplex.close()
+
   rbindlist(res, idcol="del.rxn")
 }
 
@@ -83,7 +87,7 @@ run.miqp <- function(model, del, params) {
   ub[del] <- 0 # if del==0, meaning do no delete any reaction as a control, nothing will be changed to ub
   vtype <- model$vtype
   
-  res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=1)
+  res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
   if (res$status!=101) warning("MTA: Potential problem running MIQP. Solver status: ", res$status, ".\n")
 
   res
