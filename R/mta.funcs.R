@@ -2,17 +2,21 @@ library(Matrix)
 library(data.table)
 library(Rcplex.my)
 library(parallel)
+# need to source utils.R
 
 mta.pars <- list(v.min=-50, v.max=50, v.min.c=-1000, v.max.c=1000, alpha=0.9, epsil=0.01)
-miqp.pars <- list(trace=1, tilim=120, threads=1)
+miqp.pars <- list(trace=0, tilim=120, threads=1)
  
-mta <- function(model, v.ref, dflux, del, mta.params=mta.pars, miqp.params=miqp.pars) {
+mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, miqp.params=miqp.pars) {
   
   # formulate MTA model
   mta.model <- form.mta(model, v.ref, dflux, mta.params)
 
   # run the MTA MIQP
-  run.mta(mta.model, del, miqp.params)
+  if (del=="default") del <- 0:ncol(model$S)
+  res <- run.mta(mta.model, del, miqp.params)
+  res[, genes:=rxns2genes(del.rxn, model)]
+  rbind(res[del.rxn==0], res[del.rxn!=0][order(-mta.score)])
 }
 
 

@@ -1,7 +1,7 @@
 library(Matrix)
 library(Rcplex.my)
-source("utils.R")
-source("sampling.funcs.R")
+# need to source utils.R
+# need to source sampling.funcs.R
 
 imat.pars <- list(flux.act=1, flux.inact=0.1, flux.bound=1000)
 milp.pars <- list(trace=1, maxcalls=5000, tilim=120, nodesel=0)
