@@ -3,11 +3,11 @@ library(Rcplex.my)
 source("utils.R")
 source("sampling.funcs.R")
 
-imat.params <- list(flux.act=1, flux.inact=0.1, flux.bound=1000)
-milp.params <- list(trace=1, maxcalls=5000, tilim=120, nodesel=0)
-sampl.params <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400)
+imat.pars <- list(flux.act=1, flux.inact=0.1, flux.bound=1000)
+milp.pars <- list(trace=1, maxcalls=5000, tilim=120, nodesel=0)
+sampl.pars <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400)
 
-imat <- function(model, expr, imat.params=imat.params, milp.params=milp.params, sampl.params=sampl.params) {
+imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
   
   # model as environment
   model <- as.environment(model)
@@ -99,7 +99,7 @@ run.imat <- function(model, params) {
   vtype <- model$vtype
   
   res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
-  if (res$status!=101) stop("iMAT: Potential problems running MILP. Solver status: ", res$status, ".\n")
+  if (!res$status %in% c(101,102)) stop("iMAT: Potential problems running MILP. Solver status: ", res$status, ".\n")
 
   model$milp.out <- res # model is an environment, so will be modified outside this function
 }

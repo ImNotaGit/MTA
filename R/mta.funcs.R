@@ -1,12 +1,12 @@
 library(Matrix)
-library(Rcplex.my)
 library(data.table)
+library(Rcplex.my)
 library(parallel)
 
-mta.params <- list(v.min=-50, v.max=50, v.min.c=-1000, v.max.c=1000, alpha=0.9, epsil=0.01)
-miqp.params <- list(trace=1, tilim=120, threads=1)
+mta.pars <- list(v.min=-50, v.max=50, v.min.c=-1000, v.max.c=1000, alpha=0.9, epsil=0.01)
+miqp.pars <- list(trace=1, tilim=120, threads=1)
  
-mta <- function(model, v.ref, dflux, del, mta.params=mta.params, miqp.params=miqp.params) {
+mta <- function(model, v.ref, dflux, del, mta.params=mta.pars, miqp.params=miqp.pars) {
   
   # formulate MTA model
   mta.model <- form.mta(model, v.ref, dflux, mta.params)
@@ -48,7 +48,7 @@ form.mta <- function(model, v.ref, dflux, params) {
   rxns.st <- which(dflux==0 & model$c!=1)
   tmp <- rep(0, n)
   tmp[rxns.st] <- 2*(1-params$alpha)
-  F <- Diagonal(x=vec)
+  F <- .sparseDiagonal(x=tmp)
   c <- rep(c(0, params$alpha/2, 0, params$alpha/2), c(n.rxns+n.fw, n.fw, n.bk, n.bk))
   c[rxns.st] <- -2*(1-params$alpha)*v.ref[rxns.st]
   vtype <- rep(c("C","I"), c(n.rxns, n-n.rxns))
@@ -56,7 +56,7 @@ form.mta <- function(model, v.ref, dflux, params) {
   # return MTA model
   list(v.ref=v.ref, dflux=dflux,
        rxns.fw=rxns.fw, rxns.bk=rxns.bk, rxns.st=rxns.st,
-       c=c, F=F, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub, vtype=vtype))
+       c=c, F=F, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub, vtype=vtype)
 }
 
 run.mta <- function(model, del, params) {
@@ -88,18 +88,19 @@ run.miqp <- function(model, del, params) {
   vtype <- model$vtype
   
   res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
-  if (res$status!=101) warning("MTA: Potential problem running MIQP. Solver status: ", res$status, ".\n")
+  if (!res$status %in% c(101,102)) warning("MTA: Potential problem running MIQP. Solver status: ", res$status, ".\n")
 
   res
 }
 
 analyz.mta.res <- function(model, miqp.res) {
-    
-  v <- miqp.res$xopt
+  
   v0 <- model$v.ref
-  fw <- (1:length(v)) %in% setdiff(model$rxns.fw, model$rxns.bk)
-  bk <- (1:length(v)) %in% setdiff(model$rxns.bk, model$rxns.fw)
-  fw.or.bk <- (1:length(v)) %in% intersect(model$rxns.bk, model$rxns.fw) # these are those reactions intended to change in either direction with v.ref=0, thus these are always successful 
+  n <- length(v0)
+  v <- miqp.res$xopt[1:n]
+  fw <- (1:n) %in% setdiff(model$rxns.fw, model$rxns.bk)
+  bk <- (1:n) %in% setdiff(model$rxns.bk, model$rxns.fw)
+  fw.or.bk <- (1:n) %in% intersect(model$rxns.bk, model$rxns.fw) # these are those reactions intended to change in either direction with v.ref=0
   
   # reactions intended to change: overdone (thus regared as failed)
   fw.overdo <- fw & v0<0 & v>(-v0)
@@ -107,20 +108,26 @@ analyz.mta.res <- function(model, miqp.res) {
   # reactions intended to change: successful
   fw.yes <- fw & v>v0 & !fw.overdo
   bk.yes <- bk & v<v0 & !bk.overdo
+  fw.or.bk.yes <- fw.or.bk & v!=0
   # reactions intended to change: failed
   fw.no <- fw & v<v0
   bk.no <- bk & v>v0
+  fw.or.bk.no <- fw.or.bk & v==0
 
   # calculate mta score
   # reactions intended to change
-  s.ch <- sum(abs(v[fw.yes|bk.yes|fw.or.bk]-v0[fw.yes|bk.yes|fw.or.bk])) -
-          sum(abs(v[fw.no|bk.no]-v0[fw.no|bk.no])) - 
-          sum(abs(abs(v[fw.overdo|bk.overdo])-abs(v0[fw.overdo|bk.overdo])))
+  yes <- which(fw.yes|bk.yes|fw.or.bk.yes)
+  no <- which(fw.no|bk.no|fw.or.bk.no)
+  overdo <- which(fw.overdo|bk.overdo)
+  adv.yes <- abs(v[yes]-v0[yes])
+  adv.no <- abs(v[no]-v0[no])
+  adv.overdo <- abs(abs(v[overdo])-abs(v0[overdo]))
+  s.ch <- sum(adv.yes)-sum(adv.no)-sum(adv.overdo)
   # reactions intended to stay steady
-  dv.st <- v[model$rxns.st]-v0[model$rxns.st]
-  s.st <- sum(abs(dv.st))
-  s <- d.ch/d.st
+  adv.st <- abs(v[model$rxns.st]-v0[model$rxns.st])
+  s.st <- sum(adv.st)
+  s <- s.ch/s.st
 
   # return
-  data.table(solv.stat=miqp.res$status, obj.opt=miqp.res$obj, v.opt=v, rxns.change.yes=which(fw.yes|bk.yes|fw.or.bk), rxns.change.no=which(fw.no|bk.no), rxns.change.overdo=which(fw.overdo|bk.overdo), dv.rxns.steady=list(v[model$rxns.st]-v0[model$rxns.st]), score.change=s.ch, score.steady=s.st, mta.score=s)
+  data.table(solv.stat=miqp.res$status, obj.opt=miqp.res$obj, v.opt=list(v), rxns.change.yes=list(yes), rxns.change.no=list(no), rxns.change.overdo=list(overdo), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.change.overdo=list(adv.overdo), advs.steady=list(adv.st), score.change=s.ch, score.steady=s.st, mta.score=s)
 }
