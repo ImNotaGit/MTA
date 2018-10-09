@@ -5,7 +5,7 @@ library(parallel)
 # need to source utils.R
 
 mta.pars <- list(v.min=-50, v.max=50, v.min.c=-1000, v.max.c=1000, alpha=0.9, epsil=0.01)
-miqp.pars <- list(trace=0, tilim=120, threads=1)
+miqp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
  
 mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, miqp.params=miqp.pars) {
   
@@ -13,7 +13,7 @@ mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, miqp.pa
   mta.model <- form.mta(model, v.ref, dflux, mta.params)
 
   # run the MTA MIQP
-  if (del=="default") del <- 0:ncol(model$S)
+  if (length(del)==1 && del=="default") del <- 0:ncol(model$S)
   res <- run.mta(mta.model, del, miqp.params)
   res[, del.rxn:=as.integer(del.rxn)]
   res[, genes:=list(rxns2genes(del.rxn, model))]
@@ -92,17 +92,27 @@ run.miqp <- function(model, del, params) {
   ub[del] <- 0 # if del==0, nothing will be changed to ub, meaning do not delete any reaction (the control)
   vtype <- model$vtype
   
-  res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
-  if (!res$status %in% c(101,102)) warning("MTA: Potential problem running MIQP. Solver status: ", res$status, ".\n")
-
-  res
+  tryCatch(
+    {
+      res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
+      if (!res$status %in% c(101,102)) warning("MTA: Potential problem running MIQP for del=", del, ". Solver status: ", res$status, ".\n")
+      res
+    }, error=function(e) {
+      warning("MTA: Failed running MIQP for del=", del, ". Message: ", e, "NA returned.\n")
+      list(status=NA, obj=NA, xopt=NA)
+    }
+  )
 }
 
 analyz.mta.res <- function(model, miqp.res) {
   
+  if (is.na(miqp.res$status)) {
+    return(data.table(solv.stat=NA, obj.opt=NA, v.opt=NA, rxns.change.yes=NA, rxns.change.no=NA, rxns.change.overdo=NA, advs.change.yes=NA, advs.change.no=NA, advs.change.overdo=NA, advs.steady=NA, score.change=NA, score.steady=NA, mta.score=NA))
+  }
+  
   v0 <- model$v.ref
   n <- length(v0)
-  v <- miqp.res$xopt[1:n]
+  v <- miqp.res$xopt[1:n]  
   fw <- (1:n) %in% setdiff(model$rxns.fw, model$rxns.bk)
   bk <- (1:n) %in% setdiff(model$rxns.bk, model$rxns.fw)
   fw.or.bk <- (1:n) %in% intersect(model$rxns.bk, model$rxns.fw) # these are those reactions intended to change in either direction with v.ref=0
