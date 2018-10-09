@@ -35,8 +35,16 @@ function [qp_model] = RunGurobiMIQP (qp_model, print_level)
 
     % get results
     qp_model.result = resultgurobi;
-    qp_model.result_vector = resultgurobi.x;
-    qp_model.result_opt = resultgurobi.objval;
+    if (isfield(resultgurobi, 'x'))
+        qp_model.result_vector = resultgurobi.x;
+    else
+        qp_model.result_vector = NaN;
+    end
+    if (isfield(resultgurobi, 'objval'))
+        qp_model.result_opt = resultgurobi.objval;
+    else
+        qp_model.result_opt = NaN;
+    end
 
     qp_model.result_status_text = resultgurobi.status;
     if strcmp(resultgurobi.status, 'OPTIMAL')

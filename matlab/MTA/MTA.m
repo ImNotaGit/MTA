@@ -82,13 +82,16 @@ parfor i=1:length(rxns_to_delete)
     end
     
     %Running the optimization
-    Res = solv(tmp,0);
+    Res = solv(tmp, 1);
     
-    stat(i)= Res.result_status;
-    v_res(:,i)=Res.result_vector;
-    
-    %Calculating the score
-    [diff_change] = calculateDiff(v_ref,fwd,bck,cons_rxns,Res.result_vector);
-    diff_steady = sum(abs(Res.result_vector(s_rxns)-v_ref(s_rxns)));
-    score(i) = diff_change/diff_steady;
+    stat(i) = Res.result_status;
+    v_res(:,i) = Res.result_vector;
+    if (isnan(Res.result_vector))
+        score(i) = NaN;
+    else
+        %Calculating the score
+        diff_change = calculateDiff(v_ref,fwd,bck,cons_rxns,Res.result_vector);
+        diff_steady = sum(abs(Res.result_vector(s_rxns)-v_ref(s_rxns)));
+        score(i) = diff_change/diff_steady;
+    end
 end
