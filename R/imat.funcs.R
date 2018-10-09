@@ -24,7 +24,7 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
   # sample the metabolic model to get the fluxes of the reference state
   sample.model(model, sampl.params) # update model in place
   
-  # force close CPLEX
+  # close CPLEX
   Rcplex.close()
 
   # model back to list

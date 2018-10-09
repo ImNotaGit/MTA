@@ -26,7 +26,7 @@ rxns2genes <- function(vec, model) {
   # given a numerical vector corresponding to the reaction indeces in the model, map each of them to gene names, return as a list (or a simple vector for a single reaction); NA will be returned for reaction indeces outside the proper range (including 0)
   vec[vec==0] <- NA
   res <- lapply(str_extract_all(model$rules[vec], "[1-9][0-9]*"), function(x) unique(model$genes[as.numeric(x)]))
-  if (length(res)==1) res <- res[[1]]
+  #if (length(res)==1) res <- res[[1]]
   return(res)
 }
 

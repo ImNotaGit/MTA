@@ -15,7 +15,8 @@ mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, miqp.pa
   # run the MTA MIQP
   if (del=="default") del <- 0:ncol(model$S)
   res <- run.mta(mta.model, del, miqp.params)
-  res[, genes:=rxns2genes(del.rxn, model)]
+  res[, del.rxn:=as.integer(del.rxn)]
+  res[, genes:=list(rxns2genes(del.rxn, model))]
   rbind(res[del.rxn==0], res[del.rxn!=0][order(-mta.score)])
 }
 
@@ -71,7 +72,7 @@ run.mta <- function(model, del, params) {
     analyz.mta.res(model, miqp.res)
   }, mc.cores=detectCores())
 
-  # force close CPLEX
+  # close CPLEX
   Rcplex.close()
 
   rbindlist(res, idcol="del.rxn")
@@ -86,9 +87,9 @@ run.miqp <- function(model, del, params) {
   bvec <- c(model$rowlb, model$rowub)
   sense <- rep(c("G","L"), c(length(model$rowlb), length(model$rowub)))
   lb <- model$lb
-  lb[del] <- 0 # if del==0, meaning do no delete any reaction as a control, nothing will be changed to lb
+  lb[del] <- 0 # if del==0, nothing will be changed to lb, meaning do not delete any reaction (the control)
   ub <- model$ub
-  ub[del] <- 0 # if del==0, meaning do no delete any reaction as a control, nothing will be changed to ub
+  ub[del] <- 0 # if del==0, nothing will be changed to ub, meaning do not delete any reaction (the control)
   vtype <- model$vtype
   
   res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
