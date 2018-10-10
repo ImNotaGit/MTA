@@ -18,9 +18,9 @@ if (user=="fountain") {
 rm(user)
 
 
-# recon model genes
+# Recon1 model data
 #library(R.matlab)
-#recon <- readMat("/home/fountain/Documents/Projects/ourtools/MTA/matlab/models/recon.mat")
+#recon <- readMat("/home/fountain/Documents/Projects/ourtools/MTA/models/recon.mat")
 #genes <- unname(unlist(recon$model[[24]])) # unique gene symbols
 #genes.map <- as.vector(recon$model[[22]]) # mapping between all model genes and unique genes
 #model.gene.symbols <- genes[genes.map]
@@ -32,11 +32,19 @@ rm(user)
 #model <- list(genes=model.gene.symbols, rules=model.rxn.rules)
 #save(model, file="recon.data.RData")
 
+# ElegCyc model data
+#load("/home/fountain/Documents/Projects/ourtools/MTA/R/ElegCyc.RData")
+#model <- elegcyc[c("genes","rules")]
+#save(model, file="elegcyc.data.RData")
+
 
 use.model <- function(model="recon") {
   if (model=="recon") {
     load(file.path(mta.path, "Rwrapper", "recon.data.RData"), envir=.GlobalEnv)
-    model.mat <<- file.path(mta.path, "matlab", "models", "recon.mat")
+    model.mat <<- file.path(mta.path, "models", "recon.mat")
+  } else if (model=="elegcyc") {
+    load(file.path(mta.path, "Rwrapper", "elegcyc.data.RData"), envir=.GlobalEnv)
+    model.mat <<- file.path(mta.path, "models", "elegcyc.mat")
   }
 }
 
