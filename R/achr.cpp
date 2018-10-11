@@ -7,6 +7,8 @@
 
 Rcpp::List achr(const Rcpp::List& model, const Rcpp::List& state, const arma::mat& warmupPoints, const int nPoints, const int stepsPerPoint) {
     
+    std::cout << "Preparing for ACHR sampling..." << std::endl;
+
     const double maxMinTol = 1e-09, uTol = 1e-09, dTol = 1e-14;
     arma::vec lb = Rcpp::as<arma::vec>(model["lb"]);
     arma::vec ub = Rcpp::as<arma::vec>(model["ub"]);
@@ -20,7 +22,7 @@ Rcpp::List achr(const Rcpp::List& model, const Rcpp::List& state, const arma::ma
     arma::vec prevPoint = Rcpp::as<arma::vec>(state["prev.pnt"]);
     unsigned int totalStepCount = Rcpp::as<Rcpp::IntegerVector>(state["n.tot.steps"])[0];
 
-    std::cout << "Begin ACHR sampling." << std::endl;
+    std::cout << "Begin ACHR sampling..." << std::endl;
 
     arma::mat points(nRxns, nPoints);
     arma::vec curPoint;

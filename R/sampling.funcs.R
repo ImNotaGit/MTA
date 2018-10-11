@@ -5,12 +5,12 @@ library(parallel)
 library(Rcpp)
 library(RcppArmadillo)
 
-sourceCpp("achr.cpp")
+# need to source achr.cpp in the same dir with sourceCpp("achr.cpp")
 
 sample.model <- function(model, params) {
   if ("sample" %in% ls(model)) {
     cat("Will use the warmup points and status stored in the model.\n")
-    cat("Will sample", params$n.sampl, "points without burnin.\n")
+    cat("Will sample", params$n.sampl, "points without burn-in.\n")
     res <- achr(model, model$sample$stat, model$sample$warmup.pnts, params$n.sampl, params$steps.per.pnt)
     # model is an environment, modified in place outside this function
     model$sample$stat <- res$stat
@@ -21,7 +21,7 @@ sample.model <- function(model, params) {
     warmup.pnts <- sample.warmup.pnts(model, params$n.warmup)
     centr.pnt <- rowMeans(warmup.pnts)
     init.stat <- list(centr.pnt=centr.pnt, prev.pnt=centr.pnt, n.tot.steps=0)
-    cat("Will sample", params$n.sampl, "points after", params$n.burnin, "points.\n")
+    cat("Will sample", params$n.sampl, "points after", params$n.burnin, "burn-in points.\n")
     res <- achr(model, init.stat, warmup.pnts, params$n.burnin+params$n.sampl, params$steps.per.pnt)
     # model is an environment, modified in place outside this function
     model$sample <- res
@@ -36,8 +36,8 @@ sample.warmup.pnts <- function(model, n) {
     n <- 2*n.rxns
     warning(sprintf("#{warmup points} should be at least 2*#{reactions}=%d.\n", 2*n.rxns))
   }
-  cat("Will generate ", n, " warmup points.\n")
-  cat("Begin generating warmup points.\n")
+  cat("Will generate", n, "warmup points.\n")
+  cat("Begin generating warmup points...\n")
   orth.pnts <- get.orth.pnts(model, n)
   rand.pnts <- get.rand.pnts(model, n)
   r <- rep(runif(n), each=n.rxns)

@@ -129,6 +129,9 @@ elegcyc$rules <- unname(sapply(elegcyc$rules, function(x) {
   if (is.na(x)) x <- "0"
   str_replace_all(x, "x\\(([0-9]+)\\)", "x\\[\\1\\]")
 }))
+elegcyc$rowlb <- rep(0, length(elegcyc$mets))
+elegcyc$rowub <- rep(0, length(elegcyc$mets))
+elegcyc$S <- Matrix(elegcyc$S, sparse=TRUE)
 
 
 save(elegcyc, file="ElegCyc.RData")
