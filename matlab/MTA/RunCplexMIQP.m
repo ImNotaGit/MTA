@@ -33,6 +33,12 @@ function [qp_model] = RunCplexMIQP (qp_model, print_level)
     % Optimize the problem
     try
         ILOGcplex.solve();
+        % get results
+        qp_model.result = ILOGcplex.Solution;
+        qp_model.result_vector = ILOGcplex.Solution.x;
+        qp_model.result_opt = ILOGcplex.Solution.objval;
+        qp_model.result_status = ILOGcplex.Solution.status;
+        qp_model.result_status_text = ILOGcplex.Solution.statusstring;
     catch ME
         fprintf('*** RunCplexMIQP *** Failed to run solver.\n');
         qp_model.result = struct();
@@ -42,14 +48,7 @@ function [qp_model] = RunCplexMIQP (qp_model, print_level)
         qp_model.result_status_text = 'Failed';
     end
 
-    % get results
-    qp_model.result = ILOGcplex.Solution;
-    qp_model.result_vector = ILOGcplex.Solution.x;
-    qp_model.result_opt = ILOGcplex.Solution.objval;
-
-    qp_model.result_status = ILOGcplex.Solution.status;
-    qp_model.result_status_text = ILOGcplex.Solution.statusstring;
-
+    
     if print_level > 0
         fprintf('\n*** RunCplexMIQP ***\nOpt val: %d\nExit flag: %d\nExit text: %s\n', qp_model.result_opt, qp_model.result_status, qp_model.result_status_text);
     end
