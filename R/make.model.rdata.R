@@ -70,18 +70,24 @@ elegcyc$c <- tmp@obj_coef
 elegcyc$rowlb <- rep(0, length(tmp@met_id))
 elegcyc$rowub <- rep(0, length(tmp@met_id))
 elegcyc$b <- rep(0, length(tmp@met_id))
-elegcyc$genes <- tmp@allGenes
 elegcyc$rxnGeneMat <- tmp@rxnGeneMat
 # readSBMLmod() does not construct tmp@gprRules properly!!!
-tmp1 <- tmp@gpr
-tmp2 <- tmp@allGenes
-tmp1 <- str_replace_all(tmp1, " and ", " & ")
-tmp1 <- str_replace_all(tmp1, " or ", " | ")
-for (i in 1:length(tmp2)) {
-  tmp1 <- str_replace_all(tmp1, fixed(tmp2[i]), paste0("x[",i,"]"))
+rls <- tmp@gpr
+rls <- str_replace_all(rls, " and ", " & ")
+rls <- str_replace_all(rls, " or ", " | ")
+rls[rls==""] <- "0"
+gns <- tmp@allGenes
+for (i in 1:length(gns)) {
+  rls <- str_replace_all(rls, fixed(gns[i]), paste0("x[",i,"]"))
 }
-tmp1[tmp1==""] <- "0"
-elegcyc$rules <- tmp1
+elegcyc$rules <- rls
+library(biomaRt)
+mart <- useMart(biomart="ensembl", dataset="celegans_gene_ensembl")
+tmp1 <- getBM(attributes=c("external_transcript_name", "external_gene_name"), filters="external_transcript_name", values=gns, mart=mart)
+gns.map <- tmp1$external_gene_name
+names(gns.map) <- tmp1$external_transcript_name
+gns <- ifelse(gns %in% names(gns.map), gns.map[gns], gns)
+elegcyc$genes <- gns
 elegcyc$subSystems <- tmp@subSys
 
 # note: the metabolites that are not involved in any reactions was automatically removed by readSBMLmod(). folate polyglutamate (M_Folatepolyglutamate_n_c or .._m) was also automatically removed as it is a polymer, and it is only involved in reactions where the polymer is elongated or shortened by monomer unit; in such reactions polymers of different lengths (i.e. the reactant and the product) are represented by this same identity, thus amounting to no net change in this identity whatsoever.
@@ -114,10 +120,15 @@ elegcyc <- lapply(elegcyc, function(x) {
 elegcyc$modelID <- NULL
 elegcyc$metNotes <- NULL
 elegcyc$rxnNotes <- NULL
+elegcyc$proteins <- NULL
+all(elegcyc$genes==elegcyc$geneNames) # TRUE
+elegcyc$geneNames <- NULL
+elegcyc$genes <- ifelse(elegcyc$genes %in% names(gns.map), gns.map[elegcyc$genes], elegcyc$genes)
 # format the "rules" field
 elegcyc$rules <- unname(sapply(elegcyc$rules, function(x) {
   if (is.na(x)) x <- "0"
   str_replace_all(x, "x\\(([0-9]+)\\)", "x\\[\\1\\]")
 }))
+
 
 save(elegcyc, file="ElegCyc.RData")
