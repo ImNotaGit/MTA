@@ -28,9 +28,19 @@ function [qp_model] = RunCplexMIQP (qp_model, print_level)
     % parameters
     ILOGcplex.Param.timelimit.Cur = 120;
     ILOGcplex.Param.threads.Cur = 1; % single thread
+    ILOGcplex.Param.output.clonelog.Cur = -1; % no log files
 
     % Optimize the problem
-    ILOGcplex.solve();
+    try
+        ILOGcplex.solve();
+    catch ME
+        fprintf('*** RunCplexMIQP *** Failed to run solver.\n');
+        qp_model.result = struct();
+        qp_model.result_vector = NaN;
+        qp_model.result_opt = NaN;
+        qp_model.result_status = NaN;
+        qp_model.result_status_text = 'Failed';
+    end
 
     % get results
     qp_model.result = ILOGcplex.Solution;

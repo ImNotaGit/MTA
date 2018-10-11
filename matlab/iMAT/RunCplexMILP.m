@@ -29,6 +29,7 @@ function [milp_model] = RunCplexMILP (milp_model, print_level)
     % parameters
     ILOGcplex.Param.mip.strategy.nodeselect.Cur = 0; % depth-first search
     ILOGcplex.Param.timelimit.Cur = 120;
+    ILOGcplex.Param.output.clonelog.Cur = -1; % no log files
 
     % Optimize the problem
     ILOGcplex.solve();

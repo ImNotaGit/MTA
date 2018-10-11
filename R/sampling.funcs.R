@@ -8,23 +8,43 @@ library(RcppArmadillo)
 sourceCpp("achr.cpp")
 
 sample.model <- function(model, params) {
-  warmup.pnts <- sample.warmup.pnts(model, params$n.warmup)
-  centr.pnt <- rowMeans(warmup.pnts)
-  init.stat <- list(centr.pnt=centr.pnt, prev.pnt=centr.pnt, n.tot.steps=0)
-  stat <- achr(model, init.stat, warmup.pnts, params$n.burnin, params$steps.per.pnt)$stat
-  res <- achr(model, stat, warmup.pnts, params$n.sampl, params$steps.per.pnt)
-  # model is an environment, modified in place outsite this function
-  model$sample <- res
-  model$v.ref <- rowMeans(res$sampl.pnts)
+  if ("sample" %in% ls(model)) {
+    cat("Will use the warmup points and status stored in the model.\n")
+    cat("Will sample", params$n.sampl, "points without burnin.\n")
+    res <- achr(model, model$sample$stat, model$sample$warmup.pnts, params$n.sampl, params$steps.per.pnt)
+    # model is an environment, modified in place outside this function
+    model$sample$stat <- res$stat
+    model$sample$sampl.pnts <- cbind(model$sample$sampl.pnts, res$sampl.pnts)
+    model$sample$using.last.n.pnts <- params$n.sampl
+    model$sample$v.ref <- rowMeans(res$sampl.pnts)
+  } else {
+    warmup.pnts <- sample.warmup.pnts(model, params$n.warmup)
+    centr.pnt <- rowMeans(warmup.pnts)
+    init.stat <- list(centr.pnt=centr.pnt, prev.pnt=centr.pnt, n.tot.steps=0)
+    cat("Will sample", params$n.sampl, "points after", params$n.burnin, "points.\n")
+    res <- achr(model, init.stat, warmup.pnts, params$n.burnin+params$n.sampl, params$steps.per.pnt)
+    # model is an environment, modified in place outside this function
+    model$sample <- res
+    model$sample$using.last.n.pnts <- params$n.sampl
+    model$sample$v.ref <- rowMeans(res$sampl.pnts[, (params$n.burnin+1):params$n.sampl])
+  }
 }
 
 sample.warmup.pnts <- function(model, n) {
+  n.rxns <- length(model$rxns)
+  if (n<2*n.rxns) {
+    n <- 2*n.rxns
+    warning(sprintf("#{warmup points} should be at least 2*#{reactions}=%d.\n", 2*n.rxns))
+  }
+  cat("Will generate ", n, " warmup points.\n")
+  cat("Begin generating warmup points.\n")
   orth.pnts <- get.orth.pnts(model, n)
   rand.pnts <- get.rand.pnts(model, n)
-  n.rxns <- length(model$rxns)
   r <- rep(runif(n), each=n.rxns)
   dim(r) <- c(n.rxns, n)
-  orth.pnts*r + rand.pnts*(1-r)
+  res <- orth.pnts*r + rand.pnts*(1-r)
+  cat("Finished generating warmup points.\n")
+  res
 }
 
 get.orth.pnts <- function(model, n) {
@@ -36,8 +56,9 @@ get.orth.pnts <- function(model, n) {
     mat <- cbind(mat[, sample(2*n.rxns)], mat[, sample(2*n.rxns, n-2*n.rxns, replace=TRUE)])
   }
   cl <- makeCluster(detectCores(), type="FORK")
-  parApply(cl, mat, 2, get.opt.pnt, model=model)
+  res <- parApply(cl, mat, 2, get.opt.pnt, model=model)
   stopCluster(cl)
+  res
 }
 
 get.rand.pnts <- function(model, n) {
@@ -45,8 +66,9 @@ get.rand.pnts <- function(model, n) {
   cs <- runif(n.rxns*n) - 0.5
   dim(cs) <- c(n.rxns, n)
   cl <- makeCluster(detectCores(), type="FORK")
-  parApply(cl, cs, 2, get.opt.pnt, model=model)
+  res <- parApply(cl, cs, 2, get.opt.pnt, model=model)
   stopCluster(cl)
+  res
 }
 
 get.opt.pnt <- function(model, c) {

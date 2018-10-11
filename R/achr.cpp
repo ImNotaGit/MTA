@@ -20,7 +20,7 @@ Rcpp::List achr(const Rcpp::List& model, const Rcpp::List& state, const arma::ma
     arma::vec prevPoint = Rcpp::as<arma::vec>(state["prev.pnt"]);
     unsigned int totalStepCount = Rcpp::as<Rcpp::IntegerVector>(state["n.tot.steps"])[0];
 
-    std::cout << "Start ACHR sampling." << std::endl;
+    std::cout << "Begin ACHR sampling." << std::endl;
 
     arma::mat points(nRxns, nPoints);
     arma::vec curPoint;
@@ -93,7 +93,7 @@ Rcpp::List achr(const Rcpp::List& model, const Rcpp::List& state, const arma::ma
         std::cout << "Sampling progress: " << pointCount << " / " << nPoints << std::endl;
     }
 
-    std::cout << "Done ACHR sampling." << std::endl;
+    std::cout << "Finished ACHR sampling." << std::endl;
 
     Rcpp::List endState = Rcpp::List::create(Rcpp::Named("centr.pnt") = centerPoint,
                                              Rcpp::Named("prev.pnt") = prevPoint,

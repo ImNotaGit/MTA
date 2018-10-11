@@ -21,6 +21,8 @@ function warmup_points = model_sampling_warmup(model, lp_solver, points_count, i
         fprintf('start generating warmup points\n')
     end
     parfor i = 1:points_count
+        orth_point_order; % unsliced access
+        warmup_points_orth; % unsliced access forces orth_point_order and warmup_points_orth to be "broadcast", otherwise parfor will throw an "Index exceeds matrix dimensions" error
         if (i <= orth_points_count)
             % Ensure that each direction is used at least once
             orth_point_idx = orth_point_order(i);

@@ -169,10 +169,10 @@ de <- function(dat, pheno, model="~.", coef, robust=FALSE, trend=FALSE) {
   design <- model.matrix(as.formula(model), pheno)
   fit <- lmFit(mat, design)
   fit <- eBayes(fit, robust=robust, trend=trend)
-  head(topTable(fit, coef=coef, number=Inf))
-  coef <- as.data.table(topTable(fit, coef=coef, number=Inf))
+  coef <- as.data.table(topTable(fit, coef=coef, number=Inf, sort.by="none"))
+  if (length(coef)==6) coef <- cbind(data.table(id=rownames(mat)), coef)
   setnames(coef, c("id","log.fc","ave.expr","t","pval","padj","B"))
-  return(coef)
+  coef[order(-B)]
 }
 
 discrt.dflux.for.mta <- function(de.res, topn=100, padj.cutoff=0.1, model.data=model) {
@@ -225,7 +225,7 @@ discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, model.data=model) {
 
 library(R.matlab)
 
-start.matlab <- function(name="matlab", verbose=0, ...) {
+start.matlab <- function(name="matlab", verbose=-2, ...) {
   # start and connect to matlab server
   
   Matlab$startServer(...)

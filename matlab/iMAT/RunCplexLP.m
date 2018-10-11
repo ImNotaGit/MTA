@@ -24,6 +24,7 @@ function [lp_model] = RunCplexLP (lp_model, print_level)
         ILOGcplex.DisplayFunc=[];
     end
     ILOGcplex.Param.threads.Cur = 1; % single thread
+    ILOGcplex.Param.output.clonelog.Cur = -1; % no log files
 
     % Optimize the problem
     ILOGcplex.solve();
