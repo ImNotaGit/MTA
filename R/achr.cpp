@@ -37,7 +37,7 @@ Rcpp::List achr(const Rcpp::List& model, const Rcpp::List& state, const arma::ma
         while (stepCount < stepsPerPoint) {
     
             // pick a random warmup point
-            int randPointID = std::ceil(nWarmupPoints*arma::randu());
+            int randPointID = std::floor(nWarmupPoints*arma::randu());
             arma::vec randPoint = warmupPoints.col(randPointID);
             // get a direction from the center point to the warmup point
             arma::vec u = randPoint - centerPoint;

@@ -27,8 +27,8 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
   # close CPLEX
   Rcplex.close()
 
-  # model back to list
-  as.list(model)
+  # return
+  model
 }
 
 form.imat <- function(model, expr, params) {
