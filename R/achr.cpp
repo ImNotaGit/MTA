@@ -92,7 +92,9 @@ Rcpp::List achr(const Rcpp::List& model, const Rcpp::List& state, const arma::ma
         points.col(pointCount) = curPoint;
         pointCount = pointCount + 1;
         // print progress
-        std::cout << "Sampling progress: " << pointCount << " / " << nPoints << std::endl;
+        if (pointCount % (nPoints/10) == 0) {
+            std::cout << "Sampling progress: " << 100*pointCount/nPoints << "%" << std::endl;
+        }
     }
 
     std::cout << "Finished ACHR sampling." << std::endl;
