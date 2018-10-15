@@ -1,10 +1,11 @@
 library(Matrix)
+library(data.table)
 library(Rcplex.my)
 # need to source utils.R
 # need to source sampling.funcs.R
 
 imat.pars <- list(flux.act=1, flux.inact=0.1, flux.bound=1000)
-milp.pars <- list(trace=1, maxcalls=5000, tilim=120, nodesel=0)
+milp.pars <- list(trace=1, nodesel=0, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1e5)
 sampl.pars <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400)
 
 imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
@@ -19,7 +20,7 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
   run.imat(imat.model, milp.params) # modify imat.model in place
   
   # update the original metabolic model based on iMAT result
-  update.model(model, imat.model, imat.params) # update model in place
+  update.model(model, imat.model, sol=1, imat.params) # update model in place
 
   # sample the metabolic model to get the fluxes of the reference state
   sample.model(model, sampl.params) # update model in place
@@ -97,18 +98,31 @@ run.imat <- function(model, params) {
   lb <- model$lb
   ub <- model$ub
   vtype <- model$vtype
+  if ("n" %in% names(params)) {
+    n <- params$n
+    params$n <- NULL
+  } else n <- 1
   
-  res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
-  if (!res$status %in% c(101,102)) stop("iMAT: Potential problems running MILP. Solver status: ", res$status, ".\n")
+  res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=n)
+
+  if (n==1) res <- list(res)
+  res <- lapply(res, function(x) x[c("xopt","obj","status")])
+  stats <- sapply(res, function(x) x$status)
+  stats <- unique(stats[!stats %in% c(101,102,129,130)])
+
+  if (length(stats)>0) {
+    model$milp.out <- res # model is an environment, so will be modified outside this function
+    stop("iMAT: Potential problems running MILP. Please check before going on. Solver status: ", paste(stats, collapse=", "), ".\n")
+  }
 
   model$milp.out <- res # model is an environment, so will be modified outside this function
 }
 
-update.model <- function(model, imat.res, params) {
+update.model <- function(model, imat.res, sol=1, params) {
 
-  yp <- imat.res$milp.out$xopt[imat.res$var.ind=="y+"]
-  ym <- imat.res$milp.out$xopt[imat.res$var.ind=="y-"]
-  y0 <- imat.res$milp.out$xopt[imat.res$var.ind=="y0"]
+  yp <- imat.res$milp.out[[sol]]$xopt[imat.res$var.ind=="y+"]
+  ym <- imat.res$milp.out[[sol]]$xopt[imat.res$var.ind=="y-"]
+  y0 <- imat.res$milp.out[[sol]]$xopt[imat.res$var.ind=="y0"]
 
   fw <- imat.res$rxns.act[yp==1]
   bk <- imat.res$rxns.act.rev[ym==1]

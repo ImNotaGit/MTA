@@ -5,7 +5,7 @@ library(parallel)
 # need to source utils.R
 
 mta.pars <- list(v.min=-50, v.max=50, v.min.c=-1000, v.max.c=1000, alpha=0.9, epsil=0.01)
-miqp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
+miqp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1e5)
  
 mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, miqp.params=miqp.pars) {
   
@@ -14,7 +14,7 @@ mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, miqp.pa
 
   # run the MTA MIQP
   if (length(del)==1 && del=="default") del <- 0:ncol(model$S)
-  res <- run.mta(mta.model, del, miqp.params)
+  res <- run.mta(mta.model, del, miqp.params, ncores=detectCores())
   res[, del.rxn:=as.integer(del.rxn)]
   res[, genes:=list(rxns2genes(del.rxn, model))]
   rbind(res[del.rxn==0], res[del.rxn!=0][order(-mta.score)])
@@ -64,13 +64,13 @@ form.mta <- function(model, v.ref, dflux, params) {
        c=c, F=F, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub, vtype=vtype)
 }
 
-run.mta <- function(model, del, params) {
+run.mta <- function(model, del, params, ncores=detectCores()) {
   
   names(del) <- del
   res <- mclapply(del, function(i) {
     miqp.res <- run.miqp(model, i, params)
     analyz.mta.res(model, miqp.res)
-  }, mc.cores=detectCores())
+  }, mc.cores=ncores)
 
   # close CPLEX
   Rcplex.close()
@@ -91,28 +91,46 @@ run.miqp <- function(model, del, params) {
   ub <- model$ub
   ub[del] <- 0 # if del==0, nothing will be changed to ub, meaning do not delete any reaction (the control)
   vtype <- model$vtype
+  if ("n" %in% names(params)) {
+    n <- params$n
+    params$n <- NULL
+  } else n <- 1
   
   tryCatch(
     {
-      res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params)
-      if (!res$status %in% c(101,102)) warning("MTA: Potential problem running MIQP for del=", del, ". Solver status: ", res$status, ".\n")
+      res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=n)
+
+      if (n==1) res <- list(res)
+      res <- lapply(res, function(x) x[c("xopt","obj","status")])
+      stats <- sapply(res, function(x) x$status)
+      stats <- unique(stats[!stats %in% c(101,102,129,130)])
+      if (length(stats)>0) warning("MTA: Potential problem running MIQP for del=", del, ". Solver status: ", paste(stats, collapse=", "), ".\n")
       res
-    }, error=function(e) {
+    },
+    error=function(e) {
       warning("MTA: Failed running MIQP for del=", del, ". Message: ", e, "NA returned.\n")
-      list(status=NA, obj=NA, xopt=NA)
+      list(list(xopt=NA, obj=NA, status=NA))
     }
   )
 }
 
 analyz.mta.res <- function(model, miqp.res) {
   
-  if (is.na(miqp.res$status)) {
-    return(data.table(solv.stat=NA, obj.opt=NA, v.opt=NA, rxns.change.yes=NA, rxns.change.no=NA, rxns.change.overdo=NA, advs.change.yes=NA, advs.change.no=NA, advs.change.overdo=NA, advs.steady=NA, score.change=NA, score.steady=NA, mta.score=NA))
+  #miqp.res <- miqp.res[sapply(miqp.res, function(x) !is.na(x$status) && x$status %in% c(101,102,129,130))]
+  miqp.res <- miqp.res[sapply(miqp.res, function(x) !is.na(x$status))]
+  if (length(miqp.res)==0) {
+    return(data.table(solv.stat=NA, obj.opt=NA, v.opt=NA, int.opt=NA, rxns.change.yes=NA, rxns.change.no=NA, rxns.change.overdo=NA, advs.change.yes=NA, advs.change.no=NA, advs.change.overdo=NA, advs.steady=NA, score.change=NA, score.steady=NA, mta.score=NA, alt.score=NA))
   }
-  
+
+  res <- rbindlist(lapply(miqp.res, analyz.mta.res0, model=model))
+  res[which.max(mta.score)]
+}
+
+analyz.mta.res0 <- function(model, miqp.res) {
+ 
   v0 <- model$v.ref
   n <- length(v0)
-  v <- miqp.res$xopt[1:n]  
+  v <- miqp.res$xopt[1:n]
   fw <- (1:n) %in% setdiff(model$rxns.fw, model$rxns.bk)
   bk <- (1:n) %in% setdiff(model$rxns.bk, model$rxns.fw)
   fw.or.bk <- (1:n) %in% intersect(model$rxns.bk, model$rxns.fw) # these are those reactions intended to change in either direction with v.ref=0
@@ -143,6 +161,9 @@ analyz.mta.res <- function(model, miqp.res) {
   s.st <- sum(adv.st)
   s <- s.ch/s.st
 
+  # another score
+  s1 <- s.ch/(length(yes)+length(no)+length(overdo)) - s.st/length(model$rxns.st)
+
   # return
-  data.table(solv.stat=miqp.res$status, obj.opt=miqp.res$obj, v.opt=list(v), rxns.change.yes=list(yes), rxns.change.no=list(no), rxns.change.overdo=list(overdo), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.change.overdo=list(adv.overdo), advs.steady=list(adv.st), score.change=s.ch, score.steady=s.st, mta.score=s)
+  data.table(solv.stat=miqp.res$status, obj.opt=miqp.res$obj, v.opt=list(v), int.opt=list(miqp.res$xopt[(n+1):length(miqp.res$xopt)]), rxns.change.yes=list(yes), rxns.change.no=list(no), rxns.change.overdo=list(overdo), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.change.overdo=list(adv.overdo), advs.steady=list(adv.st), score.change=s.ch, score.steady=s.st, mta.score=s, alt.score=s1)
 }
