@@ -314,7 +314,7 @@ imat <- function(expr, vout1="imat_v", vout2="imat_sampl_pnts", model="model", m
   list(v=as.vector(res1[[1]]), sampl.pnts=res2[[1]])
 }
 
-mta <- function(v.ref, dflux, del=NULL, vout1="mta_scores", vout2="mta_stats", vout3="mta_v_res", model="model", solver="cplex", server=matlab) {
+mta <- function(v.ref, dflux, del=NULL, vout="mta_res", model="model", solver="cplex", server=matlab) {
   # run MTA in MATLAB
   # usage on the arguments is similar to the function imat
   # v.ref: source state fluxes; dflux: intented flux changes; del: the reaction-deletion(s) to screen
@@ -358,25 +358,19 @@ mta <- function(v.ref, dflux, del=NULL, vout1="mta_scores", vout2="mta_stats", v
   }
   
   # run MTA
-  if (!is.null(vout3)) {
-    evaluate(server, sprintf("[%s, %s, %s] = MTA(%s, %s, %s, %s, '%s');", vout1, vout2, vout3, model, v.ref.n, dflux.n, del.n, solver))
-    res4 <- getVariable(server, vout3)
-  } else {
-    evaluate(server, sprintf("[%s, %s] = MTA(%s, %s, %s, %s, '%s');", vout1, vout2, model, v.ref.n, dflux.n, del.n, solver))
-    res4 <- NA
-  }
+  evaluate(server, sprintf("%s = MTA(%s, %s, %s, %s, '%s');", vout, model, v.ref.n, dflux.n, del.n, solver))
 
-  # retrieve results from MATLAB, need to do it separately otherwise the order will not keep as is.
-  res1 <- getVariable(server, del.n)
-  res2 <- getVariable(server, vout1)
-  res3 <- getVariable(server, vout2)
-  if (!is.na(res4)) {
-    res4 <- res4[[1]]
-    colnames(res4) <- as.vector(res1[[1]])
-    res <- list(summ=data.table(del.rxn=as.vector(res1[[1]]), score=as.vector(res2[[1]]), stat=as.vector(res3[[1]])), v.res=res4)
-  } else {
-    res <- data.table(del.rxn=as.vector(res1[[1]]), score=as.vector(res2[[1]]), stat=as.vector(res3[[1]]))
-  }
+  # retrieve results from MATLAB
+  tmp <- getVariable(server, vout)[[1]]
+  res <- rbindlist(apply(tmp, 3, function(x) {
+    x <- as.data.table(lapply(x, function(i) {
+      i <- as.vector(i)
+      if (length(i)>1) i <- list(i)
+      i
+    }))
+    setnames(x, dimnames(tmp)[[1]])
+    x
+  }))
   return(res)
 }
 
