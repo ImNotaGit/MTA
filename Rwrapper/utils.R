@@ -104,7 +104,7 @@ rxns2genes <- function(vec, model.data=model) {
   # given a numerical vector corresponding to the reaction indeces in the model, map each of them to gene names, return as a list (or a simple vector for a single reaction); NA will be returned for reaction indeces outside the proper range (including 0)
   vec[vec==0] <- NA
   res <- lapply(str_extract_all(model.data$rules[vec], "[1-9][0-9]*"), function(x) unique(model.data$genes[as.numeric(x)]))
-  if (length(res)==1) res <- res[[1]]
+  #if (length(res)==1) res <- res[[1]]
   return(res)
 }
 
@@ -225,8 +225,8 @@ discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, model.data=model) {
 
 library(R.matlab)
 
-start.matlab <- function(name="matlab", verbose=-2, ...) {
-  # start and connect to matlab server
+start.matlab <- function(name="matlab", verbose=2, ...) {
+  # start and connect to matlab server; verbose=2 is showing less info; a smaller number e.g. verbose=-2 will show more but virtually useless because it seems that matlab error info is not passed to R anyway...
   
   Matlab$startServer(...)
   assign(name, Matlab(), envir=.GlobalEnv)
@@ -314,7 +314,7 @@ imat <- function(expr, vout1="imat_v", vout2="imat_sampl_pnts", model="model", m
   list(v=as.vector(res1[[1]]), sampl.pnts=res2[[1]])
 }
 
-mta <- function(v.ref, dflux, del=NULL, vout="mta_res", model="model", solver="cplex", server=matlab) {
+mta <- function(v.ref, dflux, del=NULL, vout="mta_res", model="model", solver="cplex", server=matlab, model.data=model) {
   # run MTA in MATLAB
   # usage on the arguments is similar to the function imat
   # v.ref: source state fluxes; dflux: intented flux changes; del: the reaction-deletion(s) to screen
@@ -362,16 +362,24 @@ mta <- function(v.ref, dflux, del=NULL, vout="mta_res", model="model", solver="c
 
   # retrieve results from MATLAB
   tmp <- getVariable(server, vout)[[1]]
-  res <- rbindlist(apply(tmp, 3, function(x) {
-    x <- as.data.table(lapply(x, function(i) {
-      i <- as.vector(i)
-      if (length(i)>1) i <- list(i)
-      i
+  tryCatch(
+  {
+    res <- rbindlist(apply(tmp, 3, function(x) {
+      x <- as.data.table(lapply(x, function(i) {
+        i <- as.vector(i)
+        if (length(i)>1) i <- list(i)
+        if (length(i)==0 || (length(i)==1 && (is.null(i) || is.na(i)))) i <- NA
+        i
+      }))
+      setnames(x, dimnames(tmp)[[1]])
+      x
     }))
-    setnames(x, dimnames(tmp)[[1]])
-    x
-  }))
-  return(res)
+    res[, genes:=list(rxns2genes(del.rxn, model.data))]
+    res
+  }, error=function(e) {
+    warning("Failed to reformat MTA output from MATLAB, please do it manually.\n")
+    tmp
+  })
 }
 
 make.ortho.dflux <- function(seed=0, x) {

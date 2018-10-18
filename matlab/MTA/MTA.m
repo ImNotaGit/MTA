@@ -80,6 +80,7 @@ parfor i=1:length(rxns_to_delete)
     if (isnan(Res.result_vector))
         %score(i) = NaN;
         x = struct();
+        x.del_rxn = rxns_to_delete(i);
         x.solv_stat = NaN;
         x.obj_opt = NaN;
         x.v_opt = NaN;
@@ -102,6 +103,7 @@ parfor i=1:length(rxns_to_delete)
         %score(i) = diff_change/diff_steady;
         [success, unsuccess, wrong, dvs, dvu, dvw, diffc] = calculateDiff(v_ref, fwd, bck, cons_rxns, Res.result_vector);
         x = struct();
+        x.del_rxn = rxns_to_delete(i);
         x.solv_stat = Res.result_status;
         x.obj_opt = Res.result_opt;
         x.v_opt = Res.result_vector(1:length(v_ref));
