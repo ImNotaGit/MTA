@@ -5,8 +5,8 @@ library(Rcplex.my)
 # need to source sampling.funcs.R
 
 imat.pars <- list(flux.act=1, flux.inact=0.1, flux.bound=1000)
-milp.pars <- list(trace=1, nodesel=0, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1e5)
-sampl.pars <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400)
+milp.pars <- list(trace=1, nodesel=0, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1)
+sampl.pars <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400, ncores=detectCores())
 
 imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
   
@@ -35,7 +35,7 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
 form.imat <- function(model, expr, params) {
 
   # reaction data
-  rxns.int.raw <- discrt.genes2rxns(expr, "stat", model)
+  rxns.int.raw <- discrt.genes2rxns(expr, 0, model)
   rxns.int <- rxns.int.raw
   # remove integers for dead end rxns
   rxns.int[model$lb==0 & model$ub==0] <- 0

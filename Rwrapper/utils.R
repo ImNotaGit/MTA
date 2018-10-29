@@ -364,7 +364,7 @@ mta <- function(v.ref, dflux, del=NULL, vout="mta_res", model="model", solver="c
   tmp <- getVariable(server, vout)[[1]]
   tryCatch(
   {
-    res <- rbindlist(apply(tmp, 3, function(x) {
+    rbindlist(apply(tmp, 3, function(x) {
       x <- as.data.table(lapply(x, function(i) {
         i <- as.vector(i)
         if (length(i)>1) i <- list(i)
@@ -374,8 +374,6 @@ mta <- function(v.ref, dflux, del=NULL, vout="mta_res", model="model", solver="c
       setnames(x, dimnames(tmp)[[1]])
       x
     }))
-    res[, genes:=list(rxns2genes(del.rxn, model.data))]
-    res
   }, error=function(e) {
     warning("Failed to reformat MTA output from MATLAB, please do it manually.\n")
     tmp

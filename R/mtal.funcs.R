@@ -4,86 +4,94 @@ library(Rcplex.my)
 library(parallel)
 # need to source utils.R
 
-mta.pars <- list(v.min=-50, v.max=50, v.min.c=-1000, v.max.c=1000, alpha=0.9, epsil=0.01)
 lp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
  
-mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, lp.params=lp.pars) {
+mtal <- function(model, v.ref, dflux, del="default", lp.params=lp.pars, ncores=detectCores()) {
   
   # formulate MTA model
-  mta.model <- form.mta(model, v.ref, dflux, mta.params)
+  mtal.model <- form.mtal(model, v.ref, dflux)
 
   # run the MTA MIQP
   if (length(del)==1 && del=="default") del <- 0:ncol(model$S)
-  res <- run.mta(mta.model, del, lp.params, ncores=detectCores())
-  res[, del.rxn:=as.integer(del.rxn)]
-  res[, genes:=list(rxns2genes(del.rxn, model))]
-  rbind(res[del.rxn==0], res[del.rxn!=0][order(-score.adj)])
+  run.mtal(mtal.model, del, lp.params, ncores)
 }
 
-form.mta <- function(model, v.ref, dflux, params) {
+form.mtal <- function(model, v.ref, dflux) {
   
   n.mets <- nrow(model$S)
   n.rxns <- ncol(model$S)
 
   # constraint matrix
   ## for reactions meant to remain steady
-  rxns.st <- which(dflux==0 & model$c!=1)
-  n.st <- length(rxns.st)
-  m1 <- rbind(sparseMatrix(1:n.st, rxns.st, x=1, dims=c(n.st, n.rxns)), sparseMatrix(1:n.st, rxns.st, x=-1, dims=c(n.st, n.rxns)))
+  st <- which(dflux==0 & model$c!=1)
+  n.st <- length(st)
+  m1 <- rbind(sparseMatrix(1:n.st, st, x=1, dims=c(n.st, n.rxns)), sparseMatrix(1:n.st, st, x=-1, dims=c(n.st, n.rxns)))
   m2 <- rbind(Diagonal(n.st), Diagonal(n.st))
   S <- rbind(cbind(model$S, sparseMatrix(NULL, NULL, dims=c(n.mets, n.st))),
              cbind(m1, m2))
   ## for **reversible** reactions that is meant to have reduced fluxes (i.e. these have the potential to "overshoot", thus need to be treated specially)
-  rxns.x <- which(model$lb<0 & dflux==-1)
-  n.x <- length(rxns.x)
-  m1 <- rbind(sparseMatrix(1:n.x, rxns.x, x=1, dims=c(n.x, n.rxns)), sparseMatrix(1:n.x, rxns.x, x=-1, dims=c(n.x, n.rxns)))
-  m2 <- rbind(Diagonal(n.x), Diagonal(n.x))
-  S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(n.mets+2*n.st, n.x))),
-             cbind(m1, sparseMatrix(NULL, NULL, dims=c(2*n.x, n.st)), m2))
+  rvdn.b <- model$lb<0 & dflux==-1
+  rvdn <- which(rvdn.b)
+  n.rvdn <- length(rvdn)
+  m1 <- rbind(sparseMatrix(1:n.rvdn, rvdn, x=1, dims=c(n.rvdn, n.rxns)), sparseMatrix(1:n.rvdn, rvdn, x=-1, dims=c(n.rvdn, n.rxns)))
+  m2 <- rbind(Diagonal(n.rvdn), Diagonal(n.rvdn))
+  S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(n.mets+2*n.st, n.rvdn))),
+             cbind(m1, sparseMatrix(NULL, NULL, dims=c(2*n.rvdn, n.st)), m2))
 
   # constraints
-  rowlb <- c(model$rowlb, c(v.ref[rxns.st], -v.ref[rxns.st]), rep(0, 2*n.x))
-  rowub <- c(model$rowub, rep(Inf, 2*(n.st+n.x)))
-  lb <- c(model$lb, rep(0, n.st+n.x))
-  ub <- c(model$ub, rep(Inf, n.st+n.x))
+  rowlb <- c(model$rowlb, c(v.ref[st], -v.ref[st]), rep(0, 2*n.rvdn))
+  rowub <- c(model$rowub, rep(Inf, 2*(n.st+n.rvdn)))
+  lb <- c(model$lb, rep(0, n.st+n.rvdn))
+  ub <- c(model$ub, rep(Inf, n.st+n.rvdn))
 
   # objective function and others
-  ## reactions meant to change in the forward direction, excluding those in rxns.x (i.e. w/o the potential to "overshoot")
-  rxns.fw0 <- v.ref>0 & dflux==1 | v.ref==0 & dflux==1 & model$lb>=0
-  ## reactions meant to change in the backward direction, excluding those in rxns.x (i.e. w/o the potential to "overshoot")
-  rxns.bk0 <- v.ref<0 & dflux==1 | v.ref>0 & dflux==-1 & model$lb>=0
+  ## reactions meant to change in the forward direction, excluding those in rvdn (i.e. w/o the potential to "overshoot")
+  fw0.b <- v.ref>0 & dflux==1 | v.ref==0 & dflux==1 & model$lb>=0
+  ## reactions meant to change in the backward direction, excluding those in rvdn (i.e. w/o the potential to "overshoot")
+  bk0.b <- v.ref<0 & dflux==1 | v.ref>0 & dflux==-1 & model$lb>=0
   tmp <- rep(0, n.rxns)
-  n.ch <- sum(dflux!=0)
-  tmp[rxns.fw0] <- -1/n.ch
-  tmp[rxns.bk0] <- 1/n.ch
-  c <- c(tmp, rep(1/n.st, n.st), rep(1/n.ch, n.x))
+  n.ch <- sum(dflux!=0, na.rm=TRUE)
+  tmp[fw0.b] <- -1/n.ch
+  tmp[bk0.b] <- 1/n.ch
+  c <- c(tmp, rep(1/n.st, n.st), rep(1/n.ch, n.rvdn))
 
-  # for record
+  # things to keep for downstream analysis of MTA score
   ## reactions meant to change in the forward direction
-  fw <- v.ref>0 & dflux==1 | v.ref<0 & dflux==-1
+  fw <- which(v.ref>0 & dflux==1 | v.ref<0 & dflux==-1)
   ## reactions meant to change in the backward direction
-  bk <- v.ref<0 & dflux==1 | v.ref>0 & dflux==-1
+  bk <- which(v.ref<0 & dflux==1 | v.ref>0 & dflux==-1)
   ## **reversible** reactions with v.ref==0 and dflux==1: it's fine for them to change either forward or backward; Note that I did not include these in the objective function: they would require maximize |v|, which is slightly tricker; I simply neglect such cases and adjust for them later in the scores
-  fw.or.bk <- v.ref==0 & dflux==1 & model$lb<0
+  fw.or.bk <- which(v.ref==0 & dflux==1 & model$lb<0)
 
   # return MTA model
   list(v.ref=v.ref, dflux=dflux,
-       fw=fw, bk=bk, fw.or.bk=fw.or.bk, rxns.st=rxns.st, n.ch=n.ch,
+       fw0.b=fw0.b, bk0.b=bk0.b, rvdn.b=rvdn.b, fw=fw, bk=bk, fw.or.bk=fw.or.bk, st=st, n.ch=n.ch, n.st=n.st,
        c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub)
 }
 
-run.mta <- function(model, del, params, ncores=detectCores()) {
+run.mtal <- function(model, del, params, ncores) {
   
   names(del) <- del
   res <- mclapply(del, function(i) {
     lp.res <- run.lp(model, i, params)
-    analyz.mta.res(model, lp.res)
+    analyz.mtal.res(model, lp.res)
   }, mc.cores=ncores)
 
   # close CPLEX
   Rcplex.close()
 
-  rbindlist(res, idcol="del.rxn")
+  res <- rbindlist(res, idcol="del.rxn")
+
+  # if parallelling, the warning messages from each core won't show up, so give a summary here if any
+  e <- res[is.na(solv.stat) | solv.stat!="1"]
+  if (nrow(e)>0) {
+    for (i in 1:nrow(e)) {
+      warning("MTA: Potential problem or failed running LP for del=", e[i, del.rxn], ". Solver status: ", e[i, solv.stat], ".\n")
+    }
+  }
+
+  res[, del.rxn:=as.integer(del.rxn)] # just in case later we need to use rxns2genes, which requires numeric rxn indeces
+  rbind(res[del.rxn==0], res[del.rxn!=0][order(-score.adj)])
 }
 
 run.lp <- function(model, del, params) {
@@ -105,60 +113,63 @@ run.lp <- function(model, del, params) {
   tryCatch(
     {
       res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=params, n=n)
-      if (res$status!=1) warning("MTA: Potential problem running LP for del=", del, ". Solver status: ", res$status, ".\n")
+      res$status <- as.character(res$status)
+      if (res$status!="1") warning("MTA: Potential problem running LP for del=", del, ". Solver status: ", res$status, ".\n")
       # Not sure why the returned res$obj are NaNs... just manually recover obj
       if (is.na(res$obj)) res$obj <- sum(model$c * res$xopt)
       res[c("xopt","obj","status")]
     },
     error=function(e) {
       warning("MTA: Failed running LP for del=", del, ". Message: ", e, "NA returned.\n")
-      list(xopt=NA, obj=NA, status=NA)
+      list(xopt=NA, obj=NA, status=as.character(e))
     }
   )
 }
 
-analyz.mta.res <- function(model, lp.res) {
+analyz.mtal.res <- function(model, lp.res) {
+
+  if (is.na(lp.res$xopt) && is.na(lp.res$obj)) {
+    return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.rec=s.rec, score.mta=NA))
+  }
  
   v0 <- model$v.ref
   v <- lp.res$xopt[1:length(v0)]
-  fw <- model$fw
-  bk <- model$bk
-  fw.or.bk <- model$fw.or.bk
+  fw0 <- model$fw0.b
+  bk0 <- model$bk0.b
+  rvdn <- model$rvdn.b
   
-  # reactions intended to change: overshoot (thus regarded as failed)
-  fw.overdo <- fw & v0<0 & v>(-v0)
-  bk.overdo <- bk & v0>0 & v<(-v0)
-  overdo <- which(fw.overdo|bk.overdo)
   # reactions intended to change: successful
-  fw.yes <- fw & v>v0 & !fw.overdo
-  bk.yes <- bk & v<v0 & !bk.overdo
-  fw.or.bk.yes <- fw.or.bk & v!=0
-  yes <- which(fw.yes|bk.yes|fw.or.bk.yes)
+  fw0.yes <- fw0 & v>v0
+  bk0.yes <- bk0 & v<v0
+  rvdn.yes <- rvdn & abs(v)<abs(v0)
+  yes <- which(fw0.yes|bk0.yes|rvdn.yes)
+
   # reactions intended to change: failed
-  fw.no <- fw & v<v0
-  bk.no <- bk & v>v0
-  fw.or.bk.no <- fw.or.bk & v==0
-  no <- which(fw.no|bk.no|fw.or.bk.no)
+  fw0.no <- fw0 & v<v0
+  bk0.no <- bk0 & v>v0
+  rvdn.no <- rvdn & abs(v)>abs(v0)
+  no <- which(fw0.no|bk0.no|rvdn.no)
 
   # absolute differences between v and v.ref for the different sets of reactions
-  adv.yes <- abs(v[yes]-v0[yes])
-  adv.no <- abs(v[no]-v0[no])
-  adv.overdo <- abs(abs(v[overdo])-abs(v0[overdo]))
-  adv.st <- abs(v[model$rxns.st]-v0[model$rxns.st]) # reactions meant to remain steady
+  ## reactions intended to change
+  adv.yes <- ifelse(yes %in% which(rvdn.yes), abs(v0[yes])-abs(v[yes]), abs(v[yes]-v0[yes]))
+  adv.no <- ifelse(no %in% which(rvdn.no), abs(v[no])-abs(v0[no]), abs(v[no]-v0[no]))
+  ## reactions intended to remain steady
+  adv.st <- abs(v[model$st]-v0[model$st])
 
-  # raw score
+  s.yes <- sum(adv.yes)
+  s.no <- sum(adv.no)
+  s.st <- sum(adv.st)
+
+  # raw score: just the (negated) optimal objective value
   s.raw <- -lp.res$obj
   # adjusted score
-  s.adj <- s.raw + (sum(v0[bk])-sum(v0[fw]))/model$n.ch + sum(v[fw.or.bk])/model$n.ch
-  # raw score recalculated
-  #xxxx
-  # original mta score
-  s.ch <- sum(adv.yes)-sum(adv.no)-sum(adv.overdo)
-  s.st <- sum(adv.st)
-  s.mta <- s.ch/s.st
-  # alternative score (approximately equivalent to adjusted score??)
-  s.alt <- s.ch/(length(yes)+length(no)+length(overdo)) - s.st/length(model$rxns.st)
+  s.adj <- s.raw + (sum(v0[model$bk]) - sum(v0[model$fw]))/model$n.ch + sum(v[model$fw.or.bk])/model$n.ch
+  # recalculated score (should be the same as the adjusted score)
+  s.rec <- (s.yes - s.no + sum(v[model$fw.or.bk]))/model$n.ch - s.st/model$n.st
+  # ratio score like the original mta
+  s.mta <- (s.yes-s.no)/s.st
 
   # return
-  data.table(solv.stat=lp.res$status, v.opt=list(v), v.opt.full=list(lp.res$xopt), rxns.change.yes=list(yes), rxns.change.no=list(no), rxns.change.overdo=list(overdo), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.change.overdo=list(adv.overdo), advs.steady=list(adv.st), score.raw=s.raw, score.adj=s.adj, score.mta=s.mta)
+  data.table(solv.stat=lp.res$status, v.opt=list(v), v.opt.full=list(lp.res$xopt), rxns.change.yes=list(yes), rxns.change.no=list(no), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.steady=list(adv.st), score.raw=s.raw, score.adj=s.adj, score.rec=s.rec, score.mta=s.mta)
 }

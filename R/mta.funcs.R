@@ -7,17 +7,14 @@ library(parallel)
 mta.pars <- list(v.min=-50, v.max=50, v.min.c=-1000, v.max.c=1000, alpha=0.9, epsil=0.01)
 miqp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1e5)
  
-mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, miqp.params=miqp.pars) {
+mta <- function(model, v.ref, dflux, del="default", mta.params=mta.pars, miqp.params=miqp.pars, ncores=detectCores()) {
   
   # formulate MTA model
   mta.model <- form.mta(model, v.ref, dflux, mta.params)
 
   # run the MTA MIQP
   if (length(del)==1 && del=="default") del <- 0:ncol(model$S)
-  res <- run.mta(mta.model, del, miqp.params, ncores=detectCores())
-  res[, del.rxn:=as.integer(del.rxn)]
-  res[, genes:=list(rxns2genes(del.rxn, model))]
-  rbind(res[del.rxn==0], res[del.rxn!=0][order(-mta.score)])
+  run.mta(mta.model, del, miqp.params, ncores)
 }
 
 
@@ -64,7 +61,7 @@ form.mta <- function(model, v.ref, dflux, params) {
        c=c, F=F, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub, vtype=vtype)
 }
 
-run.mta <- function(model, del, params, ncores=detectCores()) {
+run.mta <- function(model, del, params, ncores) {
   
   names(del) <- del
   res <- mclapply(del, function(i) {
@@ -75,7 +72,9 @@ run.mta <- function(model, del, params, ncores=detectCores()) {
   # close CPLEX
   Rcplex.close()
 
-  rbindlist(res, idcol="del.rxn")
+  res <- rbindlist(res, idcol="del.rxn")
+  res[, del.rxn:=as.integer(del.rxn)] # just in case later we need to use rxns2genes, which requires numeric rxn indeces
+  rbind(res[del.rxn==0], res[del.rxn!=0][order(-score.mta)])
 }
 
 run.miqp <- function(model, del, params) {
@@ -119,11 +118,11 @@ analyz.mta.res <- function(model, miqp.res) {
   #miqp.res <- miqp.res[sapply(miqp.res, function(x) !is.na(x$status) && x$status %in% c(101,102,129,130))]
   miqp.res <- miqp.res[sapply(miqp.res, function(x) !is.na(x$status))]
   if (length(miqp.res)==0) {
-    return(data.table(solv.stat=NA, obj.opt=NA, v.opt=NA, int.opt=NA, rxns.change.yes=NA, rxns.change.no=NA, rxns.change.overdo=NA, advs.change.yes=NA, advs.change.no=NA, advs.change.overdo=NA, advs.steady=NA, score.change=NA, score.steady=NA, mta.score=NA, alt.score=NA))
+    return(data.table(solv.stat=NA, obj.opt=NA, v.opt=NA, int.opt=NA, rxns.change.yes=NA, rxns.change.no=NA, rxns.change.overdo=NA, advs.change.yes=NA, advs.change.no=NA, advs.change.overdo=NA, advs.steady=NA, score.change=NA, score.steady=NA, score.mta=NA, score.alt=NA))
   }
 
   res <- rbindlist(lapply(miqp.res, analyz.mta.res0, model=model))
-  res[which.max(mta.score)]
+  res[which.max(score.mta)]
 }
 
 analyz.mta.res0 <- function(model, miqp.res) {
@@ -165,5 +164,5 @@ analyz.mta.res0 <- function(model, miqp.res) {
   s1 <- s.ch/(length(yes)+length(no)+length(overdo)) - s.st/length(model$rxns.st)
 
   # return
-  data.table(solv.stat=miqp.res$status, obj.opt=miqp.res$obj, v.opt=list(v), int.opt=list(miqp.res$xopt[(n+1):length(miqp.res$xopt)]), rxns.change.yes=list(yes), rxns.change.no=list(no), rxns.change.overdo=list(overdo), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.change.overdo=list(adv.overdo), advs.steady=list(adv.st), score.change=s.ch, score.steady=s.st, mta.score=s, alt.score=s1)
+  data.table(solv.stat=miqp.res$status, obj.opt=miqp.res$obj, v.opt=list(v), int.opt=list(miqp.res$xopt[(n+1):length(miqp.res$xopt)]), rxns.change.yes=list(yes), rxns.change.no=list(no), rxns.change.overdo=list(overdo), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.change.overdo=list(adv.overdo), advs.steady=list(adv.st), score.change=s.ch, score.steady=s.st, score.mta=s, score.alt=s1)
 }

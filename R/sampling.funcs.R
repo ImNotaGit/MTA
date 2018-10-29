@@ -18,7 +18,7 @@ sample.model <- function(model, params) {
     model$sampl$mean.rng <- c(params$n.burnin+1, ncol(model$sampl$pnts))
     model$sampl$mean <- rowMeans(model$sampl$pnts[, model$sampl$mean.rng[1]:model$sampl$mean.rng[2]])
   } else {
-    warmup.pnts <- sample.warmup.pnts(model, params$n.warmup)
+    warmup.pnts <- sample.warmup.pnts(model, params$n.warmup, params$ncores)
     centr.pnt <- rowMeans(warmup.pnts)
     init.stat <- list(centr.pnt=centr.pnt, prev.pnt=centr.pnt, n.tot.steps=0)
     cat("Will sample", params$n.sampl, "points after", params$n.burnin, "burn-in points.\n")
@@ -33,7 +33,7 @@ sample.model <- function(model, params) {
   }
 }
 
-sample.warmup.pnts <- function(model, n) {
+sample.warmup.pnts <- function(model, n, ncores) {
   n.rxns <- length(model$rxns)
   if (n<2*n.rxns) {
     n <- 2*n.rxns
@@ -41,8 +41,8 @@ sample.warmup.pnts <- function(model, n) {
   }
   cat("Will generate", n, "warmup points.\n")
   cat("Begin generating warmup points...\n")
-  orth.pnts <- get.orth.pnts(model, n)
-  rand.pnts <- get.rand.pnts(model, n)
+  orth.pnts <- get.orth.pnts(model, n, ncores)
+  rand.pnts <- get.rand.pnts(model, n, ncores)
   r <- rep(runif(n), each=n.rxns)
   dim(r) <- c(n.rxns, n)
   res <- orth.pnts*r + rand.pnts*(1-r)
@@ -50,7 +50,7 @@ sample.warmup.pnts <- function(model, n) {
   res
 }
 
-get.orth.pnts <- function(model, n) {
+get.orth.pnts <- function(model, n, ncores) {
   n.rxns <- length(model$rxns)
   mat <- cbind(Diagonal(n.rxns), Diagonal(n.rxns, x=-1))
   if (n<=2*n.rxns) {
@@ -58,17 +58,17 @@ get.orth.pnts <- function(model, n) {
   } else {
     mat <- cbind(mat[, sample(2*n.rxns)], mat[, sample(2*n.rxns, n-2*n.rxns, replace=TRUE)])
   }
-  cl <- makeCluster(detectCores(), type="FORK")
+  cl <- makeCluster(ncores, type="FORK")
   res <- parApply(cl, mat, 2, get.opt.pnt, model=model)
   stopCluster(cl)
   res
 }
 
-get.rand.pnts <- function(model, n) {
+get.rand.pnts <- function(model, n, ncores) {
   n.rxns <- length(model$rxns)
   cs <- runif(n.rxns*n) - 0.5
   dim(cs) <- c(n.rxns, n)
-  cl <- makeCluster(detectCores(), type="FORK")
+  cl <- makeCluster(ncores, type="FORK")
   res <- parApply(cl, cs, 2, get.opt.pnt, model=model)
   stopCluster(cl)
   res
