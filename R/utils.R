@@ -115,7 +115,7 @@ de <- function(dat, pheno, model="~.", coef, robust=FALSE, trend=FALSE) {
   res
 }
 
-discrt.dflux.for.mta <- function(de.res, topn=100, padj.cutoff=0.1, model, na.replace=TRUE, reverse.de=TRUE) {
+discrt.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, na.replace=TRUE, reverse.de=TRUE) {
   # get the directions of reaction changes as input for MTA
   # de.res: DE result as output from de(), at most topn (can be Inf) genes in either direction with fdr<0.1 are selected then mapped to reaction changes, and the resulting vector is returned; the number of changed reactions will be printed
   # NOTE that by default (reverse.de==TRUE), dflux seeks to REVERSE the DE changes!
@@ -134,12 +134,14 @@ discrt.dflux.for.mta <- function(de.res, topn=100, padj.cutoff=0.1, model, na.re
   
   # map to reactions
   vec <- discrt.genes2rxns(df, type=1, model=model, na.replace=na.replace)
-  npos <- sum(vec==1L)
-  nneg <- sum(vec==-1L)
+  npos <- sum(vec==1L, na.rm=TRUE)
+  nneg <- sum(vec==-1L, na.rm=TRUE)
   cat(sprintf("Top %d DE genes in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", topn, npos, nneg))
-  cat("Note that MTA will seek to reverse these changes!!! I.e. dflux representing the reverse direction is returned.\n")
 
-  if (reverse.de) vec <- -vec
+  if (reverse.de) {
+    cat("reverse.de==TRUE, will return dflux that is to reverse the DE changes.\n")
+    vec <- -vec
+  }
   vec
 }
 
