@@ -136,7 +136,7 @@ discrt.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, na.re
   vec <- discrt.genes2rxns(df, type=1, model=model, na.replace=na.replace)
   npos <- sum(vec==1L, na.rm=TRUE)
   nneg <- sum(vec==-1L, na.rm=TRUE)
-  cat(sprintf("Top %d DE genes in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", topn, npos, nneg))
+  cat(sprintf("Top %g DE genes in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", topn, npos, nneg))
 
   if (reverse.de) {
     cat("reverse.de==TRUE, will return dflux that is to reverse the DE changes.\n")
