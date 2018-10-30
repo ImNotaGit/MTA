@@ -2,11 +2,12 @@ library(Matrix)
 library(data.table)
 library(Rcplex.my)
 library(parallel)
-# need to source utils.R
 
 lp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
+#nc <- detectCores() # can be unreliable??
+nc <- 4L
  
-mtal <- function(model, v.ref, dflux, del="default", lp.params=lp.pars, ncores=detectCores()) {
+mtal <- function(model, v.ref, dflux, del="default", lp.params=lp.pars, ncores=nc) {
   
   # formulate MTA model
   mtal.model <- form.mtal(model, v.ref, dflux)

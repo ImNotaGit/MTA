@@ -61,7 +61,7 @@ end
 
 %v_res = zeros([n length(rxns_to_delete)]);
 
-for i=1:length(rxns_to_delete)
+parfor i=1:length(rxns_to_delete)
     tmp = model;
     
     if rxns_to_delete(i)~=0
