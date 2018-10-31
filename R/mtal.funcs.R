@@ -51,8 +51,8 @@ form.mtal <- function(model, v.ref, dflux) {
   ## reactions meant to change in the backward direction, excluding those in rvdn (i.e. w/o the potential to "overshoot")
   bk0.b <- v.ref<0 & dflux>0 | v.ref>0 & dflux<0 & model$lb>=0
   w <- abs(dflux) / sum(abs(dflux), na.rm=TRUE) # weight
-  w[is.na(w)] <- 0
-  c <- c(ifelse(fw0.b, -w, ifelse(bk0.b, w, 0)), rep(1/n.st, n.st), w[rvdn.b])
+  c <- c(ifelse(fw0.b, -w, ifelse(bk0.b, w, 0)), rep(1/n.st, n.st), w[rvdn])
+  c[is.na(c)] <- 0
 
   # things to keep for downstream analysis of MTA score
   ## reactions meant to change in the forward direction
@@ -61,12 +61,10 @@ form.mtal <- function(model, v.ref, dflux) {
   bk <- which(v.ref<0 & dflux>0 | v.ref>0 & dflux<0)
   ## **reversible** reactions with v.ref==0 and dflux==1: it's fine for them to change either forward or backward; Note that I did not include these in the objective function: they would require maximize |v|, which is slightly tricker; I simply neglect such cases and adjust for them later in the scores
   fw.or.bk <- which(v.ref==0 & dflux>0 & model$lb<0)
-  ## number reactions meant to change
-  n.ch <- sum(dflux!=0, na.rm=TRUE)
 
   # return MTA model
   list(v.ref=v.ref, dflux=dflux, w=w,
-       fw0.b=fw0.b, bk0.b=bk0.b, rvdn.b=rvdn.b, fw=fw, bk=bk, fw.or.bk=fw.or.bk, st=st, n.ch=n.ch, n.st=n.st,
+       fw0.b=fw0.b, bk0.b=bk0.b, rvdn.b=rvdn.b, fw=fw, bk=bk, fw.or.bk=fw.or.bk, st=st, n.st=n.st,
        c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub)
 }
 
@@ -130,7 +128,7 @@ run.lp <- function(model, del, params) {
 analyz.mtal.res <- function(model, lp.res) {
 
   if (is.na(lp.res$xopt) && is.na(lp.res$obj)) {
-    return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.rec=NA, score.mta=NA))
+    return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.rec=NA, score.mta=NA, score.mta.uw=NA))
   }
  
   v0 <- model$v.ref
@@ -158,19 +156,22 @@ analyz.mtal.res <- function(model, lp.res) {
   ## reactions intended to remain steady
   adv.st <- abs(v[model$st]-v0[model$st])
 
-  s.yes <- sum(adv.yes)
-  s.no <- sum(adv.no)
-  s.st <- sum(adv.st)
+  # score for reactions intended to change
+  s.ch <- sum(adv.yes * model$w[yes]) + sum(v[model$fw.or.bk] * model$w[model$fw.or.bk]) - sum(adv.no * model$w[no]) # score.yes - score.no
+  # score for reactions intended to remain steady
+  s.st.uw <- sum(adv.st) # un-weighted
+  s.st <- s.st.uw / model$n.st
 
   # raw score: just the (negated) optimal objective value
   s.raw <- -lp.res$obj
   # adjusted score
-  s.adj <- s.raw + (sum(v0[model$bk]) - sum(v0[model$fw]))/model$n.ch + sum(v[model$fw.or.bk])/model$n.ch
+  s.adj <- s.raw + sum(v0[model$bk] * model$w[model$bk]) - sum(v0[model$fw] * model$w[model$fw]) + sum(v[model$fw.or.bk] * model$w[model$fw.or.bk])
   # recalculated score (should be the same as the adjusted score)
-  s.rec <- (s.yes - s.no + sum(v[model$fw.or.bk]))/model$n.ch - s.st/model$n.st
+  s.rec <- s.ch - s.st
   # ratio score like the original mta
-  s.mta <- (s.yes-s.no)/s.st
+  s.mta <- s.ch / s.st
+  s.mta.uw <- (sum(adv.yes) + sum(v[model$fw.or.bk]) - sum(adv.no)) / s.st.uw # un-weighted
 
   # return
-  data.table(solv.stat=lp.res$status, v.opt=list(v), v.opt.full=list(lp.res$xopt), rxns.change.yes=list(yes), rxns.change.no=list(no), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.steady=list(adv.st), score.raw=s.raw, score.adj=s.adj, score.rec=s.rec, score.mta=s.mta)
+  data.table(solv.stat=lp.res$status, v.opt=list(v), v.opt.full=list(lp.res$xopt), rxns.change.yes=list(yes), rxns.change.no=list(no), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.steady=list(adv.st), score.raw=s.raw, score.adj=s.adj, score.rec=s.rec, score.mta=s.mta, score.mta.uw=s.mta.uw)
 }
