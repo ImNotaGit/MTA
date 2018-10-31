@@ -145,7 +145,7 @@ get.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, discrt=T
   
   # map to reactions
   vec <- exprs2rxns(df, type=1, model=model, discrt=discrt, na.replace=na.replace)
-  tmp <- sign(tmp)
+  tmp <- sign(vec)
   npos <- sum(tmp==1, na.rm=TRUE)
   nneg <- sum(tmp==-1, na.rm=TRUE)
   if (is.infinite(topn)) {
