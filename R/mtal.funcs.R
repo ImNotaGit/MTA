@@ -130,7 +130,7 @@ run.lp <- function(model, del, params) {
 analyz.mtal.res <- function(model, lp.res) {
 
   if (is.na(lp.res$xopt) && is.na(lp.res$obj)) {
-    return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.rec=s.rec, score.mta=NA))
+    return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.rec=NA, score.mta=NA))
   }
  
   v0 <- model$v.ref
