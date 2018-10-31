@@ -31,7 +31,7 @@ form.mtal <- function(model, v.ref, dflux) {
   S <- rbind(cbind(model$S, sparseMatrix(NULL, NULL, dims=c(n.mets, n.st))),
              cbind(m1, m2))
   ## for **reversible** reactions that is meant to have reduced fluxes (i.e. these have the potential to "overshoot", thus need to be treated specially)
-  rvdn.b <- model$lb<0 & dflux==-1
+  rvdn.b <- model$lb<0 & dflux<0
   rvdn <- which(rvdn.b)
   n.rvdn <- length(rvdn)
   m1 <- rbind(sparseMatrix(1:n.rvdn, rvdn, x=1, dims=c(n.rvdn, n.rxns)), sparseMatrix(1:n.rvdn, rvdn, x=-1, dims=c(n.rvdn, n.rxns)))
@@ -47,25 +47,25 @@ form.mtal <- function(model, v.ref, dflux) {
 
   # objective function and others
   ## reactions meant to change in the forward direction, excluding those in rvdn (i.e. w/o the potential to "overshoot")
-  fw0.b <- v.ref>0 & dflux==1 | v.ref==0 & dflux==1 & model$lb>=0
+  fw0.b <- v.ref>0 & dflux>0 | v.ref==0 & dflux>0 & model$lb>=0
   ## reactions meant to change in the backward direction, excluding those in rvdn (i.e. w/o the potential to "overshoot")
-  bk0.b <- v.ref<0 & dflux==1 | v.ref>0 & dflux==-1 & model$lb>=0
-  tmp <- rep(0, n.rxns)
-  n.ch <- sum(dflux!=0, na.rm=TRUE)
-  tmp[fw0.b] <- -1/n.ch
-  tmp[bk0.b] <- 1/n.ch
-  c <- c(tmp, rep(1/n.st, n.st), rep(1/n.ch, n.rvdn))
+  bk0.b <- v.ref<0 & dflux>0 | v.ref>0 & dflux<0 & model$lb>=0
+  w <- abs(dflux) / sum(abs(dflux), na.rm=TRUE) # weight
+  w[is.na(w)] <- 0
+  c <- c(ifelse(fw0.b, -w, ifelse(bk0.b, w, 0)), rep(1/n.st, n.st), w[rvdn.b])
 
   # things to keep for downstream analysis of MTA score
   ## reactions meant to change in the forward direction
-  fw <- which(v.ref>0 & dflux==1 | v.ref<0 & dflux==-1)
+  fw <- which(v.ref>0 & dflux>0 | v.ref<0 & dflux<0)
   ## reactions meant to change in the backward direction
-  bk <- which(v.ref<0 & dflux==1 | v.ref>0 & dflux==-1)
+  bk <- which(v.ref<0 & dflux>0 | v.ref>0 & dflux<0)
   ## **reversible** reactions with v.ref==0 and dflux==1: it's fine for them to change either forward or backward; Note that I did not include these in the objective function: they would require maximize |v|, which is slightly tricker; I simply neglect such cases and adjust for them later in the scores
-  fw.or.bk <- which(v.ref==0 & dflux==1 & model$lb<0)
+  fw.or.bk <- which(v.ref==0 & dflux>0 & model$lb<0)
+  ## number reactions meant to change
+  n.ch <- sum(dflux!=0, na.rm=TRUE)
 
   # return MTA model
-  list(v.ref=v.ref, dflux=dflux,
+  list(v.ref=v.ref, dflux=dflux, w=w,
        fw0.b=fw0.b, bk0.b=bk0.b, rvdn.b=rvdn.b, fw=fw, bk=bk, fw.or.bk=fw.or.bk, st=st, n.ch=n.ch, n.st=n.st,
        c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub)
 }

@@ -4,23 +4,34 @@ library(stringr)
 
 #### ---- metabolic model utils ----
 
-discrt.genes2rxns <- function(vec, type=0, model, na.replace=TRUE) {
-  # map a vector of values -1/0/1 either meant to be levels or direction of changes of genes to those of the reactions in the metabolic model
-  # vec is a named vector of -1/0/1, names being gene symbol; or if it's unnamed and length being model$genes, assume it's already in the same order as model$genes
+exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
+  # map a vector of expression values either meant to be levels or direction of changes of genes to those of the reactions in the metabolic model
+  # vec is a named vector of, names being gene symbol; or if it's unnamed and length being model$genes, assume it's already in the same order as model$genes
   # type==0 for vec as gene levels, type==1 for vec as directions of changes
+  # discrt==TRUE for returning a flux vector or -1/0/1, otherwise the result will be continuous values
   # NA's will be replaced by zeros if na.replace==TRUE
 
   if (is.null(names(vec)) && length(vec)==length(model$genes)) x <- vec else x <- vec[model$genes]
+  if (discrt) x <- sign(x)
   if (type==0) {
-    `&` <- function(a,b) ifelse(is.na(a) & b==-1 | is.na(b) & a==-1, -1, pmin(a,b)) # if one is NA and the other is -1, for sure the result is -1; all other NA cases are undetermined and NA will be returned
-    `|` <- function(a,b) ifelse(is.na(a) & b==1 | is.na(b) & a==1, 1, pmax(a,b)) # if one is NA and the other is 1, for sure the result is 1; all other NA cases are undetermined and NA will be returned
+    `&` <- function(a,b) {
+      if (is.na(a) & b<0) return(b)
+      if (is.na(b) & a<0) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
+      return(pmin(a,b))
+    }
+    `|` <- function(a,b) {
+      if (is.na(a) & b>0) return(b)
+      if (is.na(b) & a>0) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
+      return(pmax(a,b))
+    }
   } else if (type==1) {
-    `&` <- function(a,b) ifelse(a!=b | a==0 | b==0, 0, a) # if one is NA and the other is 0, for sure the result is 0; all other NA cases are undetermined and NA will be returned
-    `|` <- function(a,b) ifelse(a==b, a, a+b) # all NA cases are undetermined and NA will be returned
+    `&` <- function(a,b) ifelse(sign(a)!=sign(b) | a==0 | b==0, 0, pmin(a,b)) # if one is NA and the other is 0, for sure the result is 0; all other NA cases are undetermined and NA will be returned
+    `|` <- function(a,b) ifelse(sign(a)==sign(b), pmax(a,b), abs(sign(a)+sign(b))*(a+b)) # all NA cases are undetermined and NA will be returned
   }
   res <- sapply(model$rules, function(i) eval(parse(text=i)))
   if (na.replace) res[is.na(res)] <- 0
-  as.integer(unname(res))
+  if (discrt) res <- as.integer(res)
+  unname(res)
 }
 
 rxns2genes <- function(vec, model) {
@@ -42,7 +53,7 @@ genes2rxns <- function(genes, type=0, model) {
     res <- lapply(gind, function(gi) {
       tmp <- rep(0, length(model$genes))
       tmp[gi] <- -1
-      which(discrt.genes2rxns(tmp, 0, model)==-1)
+      which(exprs2rxns(tmp, 0, model)==-1)
     })
   }
   return(res)
@@ -115,7 +126,7 @@ de <- function(dat, pheno, model="~.", coef, robust=FALSE, trend=FALSE) {
   res
 }
 
-discrt.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, na.replace=TRUE, reverse.de=TRUE) {
+get.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, discrt=TRUE, na.replace=TRUE, reverse.de=TRUE) {
   # get the directions of reaction changes as input for MTA
   # de.res: DE result as output from de(), at most topn (can be Inf) genes in either direction with fdr<0.1 are selected then mapped to reaction changes, and the resulting vector is returned; the number of changed reactions will be printed
   # NOTE that by default (reverse.de==TRUE), dflux seeks to REVERSE the DE changes!
@@ -127,15 +138,16 @@ discrt.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, na.re
   #de.res <- de.res[id %in% model.data$genes & !id %in% ex.genes]
   de.res <- de.res[id %in% model$genes]
   de.res[, padj:=p.adjust(pval, method="BH")]
-  de.res[, df:=as.integer(sign(log.fc))]
-  de.res <- rbind(de.res[padj<padj.cutoff & log.fc<0][order(log.fc)][1:min(.N,topn)], de.res[padj<padj.cutoff & log.fc>0][order(-log.fc)][1:min(.N,topn)])
+  gns.ch <- c(de.res[padj<padj.cutoff & log.fc<0][order(log.fc)][1:min(.N,topn), id], de.res[padj<padj.cutoff & log.fc>0][order(-log.fc)][1:min(.N,topn), id])
+  de.res[, df:=ifelse(id %in% gns.ch, log.fc, 0)]
   df <- de.res$df
   names(df) <- de.res$id
   
   # map to reactions
-  vec <- discrt.genes2rxns(df, type=1, model=model, na.replace=na.replace)
-  npos <- sum(vec==1L, na.rm=TRUE)
-  nneg <- sum(vec==-1L, na.rm=TRUE)
+  vec <- exprs2rxns(df, type=1, model=model, discrt=discrt, na.replace=na.replace)
+  tmp <- sign(tmp)
+  npos <- sum(tmp==1, na.rm=TRUE)
+  nneg <- sum(tmp==-1, na.rm=TRUE)
   if (is.infinite(topn)) {
     cat(sprintf("All the DE genes with p.adj<%g in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", padj.cutoff, npos, nneg))
   } else cat(sprintf("At most top %g DE genes with p.adj<%g in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", topn, padj.cutoff, npos, nneg))
