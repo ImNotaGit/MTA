@@ -70,9 +70,11 @@ form.mtal <- function(model, v.ref, dflux) {
 
 run.mtal <- function(model, del, params, ncores) {
   
+  x0 <- run.lp(model, 0, params)$xopt # warm start solution
+  if (is.na(x0)) x0 <- NULL
   names(del) <- del
   res <- mclapply(del, function(i) {
-    lp.res <- run.lp(model, i, params)
+    lp.res <- run.lp(model, i, x0, params)
     analyz.mtal.res(model, lp.res)
   }, mc.cores=ncores)
 
@@ -93,7 +95,7 @@ run.mtal <- function(model, del, params, ncores) {
   rbind(res[del.rxn==0], res[del.rxn!=0][order(-score.adj)])
 }
 
-run.lp <- function(model, del, params) {
+run.lp <- function(model, del, x0, params) {
 
   cvec <- model$c
   objsense <- "min"
@@ -104,14 +106,10 @@ run.lp <- function(model, del, params) {
   lb[del] <- 0 # if del==0, nothing will be changed to lb, meaning do not delete any reaction (the control)
   ub <- model$ub
   ub[del] <- 0 # if del==0, nothing will be changed to ub, meaning do not delete any reaction (the control)
-  if ("n" %in% names(params)) {
-    n <- params$n
-    params$n <- NULL
-  } else n <- 1
   
   tryCatch(
     {
-      res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=params, n=n)
+      res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, x0=x0, control=params)
       res$status <- as.character(res$status)
       if (res$status!="1") warning("MTA: Potential problem running LP for del=", del, ". Solver status: ", res$status, ".\n")
       # Not sure why the returned res$obj are NaNs... just manually recover obj
