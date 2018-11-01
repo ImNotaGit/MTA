@@ -34,10 +34,13 @@ form.mtal <- function(model, v.ref, dflux) {
   rvdn.b <- model$lb<0 & dflux<0
   rvdn <- which(rvdn.b)
   n.rvdn <- length(rvdn)
-  m1 <- rbind(sparseMatrix(1:n.rvdn, rvdn, x=1, dims=c(n.rvdn, n.rxns)), sparseMatrix(1:n.rvdn, rvdn, x=-1, dims=c(n.rvdn, n.rxns)))
-  m2 <- rbind(Diagonal(n.rvdn), Diagonal(n.rvdn))
-  S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(n.mets+2*n.st, n.rvdn))),
-             cbind(m1, sparseMatrix(NULL, NULL, dims=c(2*n.rvdn, n.st)), m2))
+  if (n.rvdn>0) {
+    m1 <- rbind(sparseMatrix(1:n.rvdn, rvdn, x=1, dims=c(n.rvdn, n.rxns)), sparseMatrix(1:n.rvdn, rvdn, x=-1, dims=c(n.rvdn, n.rxns)))
+    m2 <- rbind(Diagonal(n.rvdn), Diagonal(n.rvdn))
+    S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(n.mets+2*n.st, n.rvdn))),
+               cbind(m1, sparseMatrix(NULL, NULL, dims=c(2*n.rvdn, n.st)), m2))
+  }
+  
 
   # constraints
   rowlb <- c(model$rowlb, c(v.ref[st], -v.ref[st]), rep(0, 2*n.rvdn))
@@ -126,7 +129,7 @@ run.lp <- function(model, del, x0, params) {
 analyz.mtal.res <- function(model, lp.res) {
 
   if (is.na(lp.res$xopt) && is.na(lp.res$obj)) {
-    return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.rec=NA, score.mta=NA, score.mta.uw=NA))
+    return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.mta=NA, score.mta.uw=NA))
   }
  
   v0 <- model$v.ref
@@ -164,12 +167,12 @@ analyz.mtal.res <- function(model, lp.res) {
   s.raw <- -lp.res$obj
   # adjusted score
   s.adj <- s.raw + sum(v0[model$bk] * model$w[model$bk]) - sum(v0[model$fw] * model$w[model$fw]) + sum(v[model$fw.or.bk] * model$w[model$fw.or.bk])
-  # recalculated score (should be the same as the adjusted score)
-  s.rec <- s.ch - s.st
+  # recalculated score (should be the same as the adjusted score) ## yes, same
+  #s.rec <- s.ch - s.st
   # ratio score like the original mta
   s.mta <- s.ch / s.st
   s.mta.uw <- (sum(adv.yes) + sum(v[model$fw.or.bk]) - sum(adv.no)) / s.st.uw # un-weighted
 
   # return
-  data.table(solv.stat=lp.res$status, v.opt=list(v), v.opt.full=list(lp.res$xopt), rxns.change.yes=list(yes), rxns.change.no=list(no), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.steady=list(adv.st), score.raw=s.raw, score.adj=s.adj, score.rec=s.rec, score.mta=s.mta, score.mta.uw=s.mta.uw)
+  data.table(solv.stat=lp.res$status, v.opt=list(v), v.opt.full=list(lp.res$xopt), rxns.change.yes=list(yes), rxns.change.no=list(no), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.steady=list(adv.st), score.raw=s.raw, score.adj=s.adj, score.mta=s.mta, score.mta.uw=s.mta.uw)
 }
