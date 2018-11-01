@@ -74,7 +74,7 @@ form.mtal <- function(model, v.ref, dflux) {
 run.mtal <- function(model, del, params, ncores) {
   
   x0 <- run.lp(model, 0, NULL, params)$xopt # warm start solution
-  if (is.na(x0)) x0 <- NULL
+  if (length(x0)==1 && is.na(x0)) x0 <- NULL
   names(del) <- del
   res <- mclapply(del, function(i) {
     lp.res <- run.lp(model, i, x0, params)
