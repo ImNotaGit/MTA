@@ -120,8 +120,8 @@ de <- function(dat, pheno, model="~.", coef, robust=FALSE, trend=FALSE) {
   design <- model.matrix(as.formula(model), pheno)
   fit <- lmFit(mat, design)
   fit <- eBayes(fit, robust=robust, trend=trend)
-  head(topTable(fit, coef=coef, number=Inf))
   res <- as.data.table(topTable(fit, coef=coef, number=Inf))
+  if (length(res)==6) res <- cbind(data.table(id=rownames(mat)), res)
   setnames(res, c("id","log.fc","ave.expr","t","pval","padj","B"))
   res
 }
