@@ -26,27 +26,26 @@ form.mtal <- function(model, v.ref, dflux) {
   ## for reactions meant to remain steady
   st <- which(dflux==0 & model$c!=1)
   n.st <- length(st)
-  m1 <- rbind(sparseMatrix(1:n.st, st, x=1, dims=c(n.st, n.rxns)), sparseMatrix(1:n.st, st, x=-1, dims=c(n.st, n.rxns)))
-  m2 <- rbind(Diagonal(n.st), Diagonal(n.st))
-  S <- rbind(cbind(model$S, sparseMatrix(NULL, NULL, dims=c(n.mets, n.st))),
-             cbind(m1, m2))
+  S <- rbind(
+    cbind( model$S,                                              sparseMatrix(NULL, NULL, dims=c(n.mets, 2*n.st)) ),
+    cbind( sparseMatrix(1:n.st, st, x=1, dims=c(n.st, n.rxns)),  Diagonal(n.st),  Diagonal(n.st, -1) )
+  )
   ## for **reversible** reactions that is meant to have reduced fluxes (i.e. these have the potential to "overshoot", thus need to be treated specially)
   rvdn.b <- model$lb<0 & dflux<0
   rvdn <- which(rvdn.b)
   n.rvdn <- length(rvdn)
   if (n.rvdn>0) {
-    m1 <- rbind(sparseMatrix(1:n.rvdn, rvdn, x=1, dims=c(n.rvdn, n.rxns)), sparseMatrix(1:n.rvdn, rvdn, x=-1, dims=c(n.rvdn, n.rxns)))
-    m2 <- rbind(Diagonal(n.rvdn), Diagonal(n.rvdn))
-    S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(n.mets+2*n.st, n.rvdn))),
-               cbind(m1, sparseMatrix(NULL, NULL, dims=c(2*n.rvdn, n.st)), m2))
+    S <- rbind(
+      cbind( S,                                                                                                             sparseMatrix(NULL, NULL, dims=c(n.mets+n.st, 2*n.rvdn)) ),
+      cbind( sparseMatrix(1:n.rvdn, rvdn, x=1, dims=c(n.rvdn, n.rxns)),  sparseMatrix(NULL, NULL, dims=c(n.rvdn, 2*n.st)),  Diagonal(n.rvdn),  Diagonal(n.rvdn, -1) )
+    )
   }
   
-
   # constraints
-  rowlb <- c(model$rowlb, c(v.ref[st], -v.ref[st]), rep(0, 2*n.rvdn))
-  rowub <- c(model$rowub, rep(Inf, 2*(n.st+n.rvdn)))
-  lb <- c(model$lb, rep(0, n.st+n.rvdn))
-  ub <- c(model$ub, rep(Inf, n.st+n.rvdn))
+  rowlb <- c(model$rowlb, v.ref[st], rep(0, n.rvdn))
+  rowub <- c(model$rowub, v.ref[st], rep(0, n.rvdn))
+  lb <- c(model$lb, rep(0, 2*n.st+2*n.rvdn))
+  ub <- c(model$ub, rep(Inf, 2*n.st+2*n.rvdn))
 
   # objective function and others
   ## reactions meant to change in the forward direction, excluding those in rvdn (i.e. w/o the potential to "overshoot")
@@ -54,7 +53,7 @@ form.mtal <- function(model, v.ref, dflux) {
   ## reactions meant to change in the backward direction, excluding those in rvdn (i.e. w/o the potential to "overshoot")
   bk0.b <- v.ref<0 & dflux>0 | v.ref>0 & dflux<0 & model$lb>=0
   w <- abs(dflux) / sum(abs(dflux), na.rm=TRUE) # weight
-  c <- c(ifelse(fw0.b, -w, ifelse(bk0.b, w, 0)), rep(1/n.st, n.st), w[rvdn])
+  c <- c(ifelse(fw0.b, -w, ifelse(bk0.b, w, 0)), rep(1/n.st, 2*n.st), w[rvdn], w[rvdn])
   c[is.na(c)] <- 0
 
   # things to keep for downstream analysis of MTA score
@@ -73,11 +72,11 @@ form.mtal <- function(model, v.ref, dflux) {
 
 run.mtal <- function(model, del, params, ncores) {
   
-  x0 <- run.lp(model, 0, NULL, params)$xopt # warm start solution
-  if (length(x0)==1 && is.na(x0)) x0 <- NULL
+  #x0 <- run.lp(model, 0, NULL, params)$xopt # warm start solution
+  #if (length(x0)==1 && is.na(x0)) x0 <- NULL
   names(del) <- del
   res <- mclapply(del, function(i) {
-    lp.res <- run.lp(model, i, x0, params)
+    lp.res <- run.lp(model, i, NULL, params)
     analyz.mtal.res(model, lp.res)
   }, mc.cores=ncores)
 
