@@ -15,13 +15,13 @@ exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
   if (discrt) x <- sign(x)
   if (type==0) {
     `&` <- function(a,b) {
-      if isTRUE((is.na(a) && b<0)) return(b)
-      if isTRUE((is.na(b) && a<0)) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
+      if (isTRUE(is.na(a) && b<0)) return(b)
+      if (isTRUE(is.na(b) && a<0)) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
       return(min(a,b))
     }
     `|` <- function(a,b) {
-      if isTRUE((is.na(a) && b>0)) return(b)
-      if isTRUE((is.na(b) && a>0)) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
+      if (isTRUE(is.na(a) && b>0)) return(b)
+      if (isTRUE(is.na(b) && a>0)) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
       return(max(a,b))
     }
   } else if (type==1) {
