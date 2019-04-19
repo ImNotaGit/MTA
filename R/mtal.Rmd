@@ -1,0 +1,45 @@
+---
+title: "Linear MTA Formulation"
+author: "Kuoyuan Cheng"
+date: "November 1, 2018"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo=FALSE, message=FALSE, tidy.opts=list(width.cutoff=50), tidy=TRUE)
+```
+
+As input to MTA, we have three pre-determined sets of reactions that should: 1. have increased fluxes (i.e. rates) (Set $R_F$, F for forward); 2. have decreased fluxes (Set $R_B$, B for backward); 3. remain steady (Set $R_S$). To simplify things conceptually, we can assume that all flux values are non-negative. We also have a reference state ($\bf v^{ref}$), i.e. a vector of fluxes for all reactions.
+
+The original MTA, during the MIQP, seeks to minimze: 
+
+* sum of squared flux changes for Set $R_S$ (the quadratic part);
+* minus the number of successfully changed cases for Set $R_F$ and $R_B$ (the integer part; we pre-define a parameter $\epsilon$ that determines "how much change is regarded as successful".)
+* the above two parts are weighted by another parameter
+
+In the linear version, I tried to replace the integer part, i.e. the number of successfully changed cases, simply by the numerical value of flux changes (i.e. sum of $\Delta \text{flux}$'s for those in $R_F$ and $R_B$), so that the extra $\epsilon$ parameter is not needed. To capture the direction of change directly, I need to formulate this part as linear. As a result, I also seek to formulate the $R_S$ part (originally quadratic) as linear to avoid the extra weight parameter. As $R_S$ are the set of reactions that should remain steady, $|\Delta \text{flux}|$'s have to be used. The formulation is as follows:
+
+\[
+\begin{gathered}
+\min \sum_{i \in R_S}{|v_i-v_i^{ref}|} - \bigg( \sum_{i \in R_F}{(v_i-v_i^{ref})} + \sum_{i \in R_B}{(v_i^{ref}-v_i)} \bigg)
+\end{gathered}
+\]
+
+where $v_i$'s are the flux variables. Note that $v_i^{ref}$'s are pre-determined constants. The minimization of absolute differences can be transformed into LP. I did it by adding the below constraints (I am not 100% sure that this is the correct way, so let me know if this is wrong!):
+
+\[
+\begin{gathered}
+\text{let} \; u_i=|v_i-v_i^{ref}| \; \forall \; i \in R_S,\\
+\text{then the original problem becomes:}\\
+\min \sum_{i \in R_S}{u_i} - \bigg( \sum_{i \in R_F}{(v_i-v_i^{ref})} + \sum_{i \in R_B}{(v_i^{ref}-v_i)} \bigg)\\
+s.t. \text{the original constraints in addition to:}\\
+u_i \ge v_i-v_i^{ref}\\
+u_i \ge v_i^{ref}-v_i
+\end{gathered}
+\]
+
+One separate LP is solved for the knock-out of each reaction, those LP's only differ in that the flux of the knocked-out reaction is constrained to be 0. I used CPLEX using an R package, which calls CPLEX via its C API. One thread was used for each LP, method was "automatic". Since all these LP's are similar, I did try to use warm start by specifying the initial values to the optimal solution of the control case, i.e. where no reaction is knocked out, but for some reason that actually slowed down the running time.
+
+
+(*The actual formulations of both the original MTA and my linear MTA are slightly more complicated to address the problem of reversible reactions, where the flux values can be negative. But they didn't explicitly show it in the original MTA paper, and here I also simplify things for the sake of presentation.)
+

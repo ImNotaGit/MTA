@@ -15,19 +15,19 @@ exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
   if (discrt) x <- sign(x)
   if (type==0) {
     `&` <- function(a,b) {
-      if (is.na(a) & b<0) return(b)
-      if (is.na(b) & a<0) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
-      return(pmin(a,b))
+      if isTRUE((is.na(a) && b<0)) return(b)
+      if isTRUE((is.na(b) && a<0)) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
+      return(min(a,b))
     }
     `|` <- function(a,b) {
-      if (is.na(a) & b>0) return(b)
-      if (is.na(b) & a>0) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
-      return(pmax(a,b))
+      if isTRUE((is.na(a) && b>0)) return(b)
+      if isTRUE((is.na(b) && a>0)) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
+      return(max(a,b))
     }
   } else if (type==1) {
     `&` <- function(a,b) ifelse(sign(a)!=sign(b) | a==0 | b==0, 0, pmin(a,b)) # if one is NA and the other is 0, for sure the result is 0; all other NA cases are undetermined and NA will be returned
     `|` <- function(a,b) ifelse(sign(a)==sign(b), pmax(a,b), abs(sign(a)+sign(b))*(a+b)) # all NA cases are undetermined and NA will be returned
-  }
+  } # I use bitwise/vectorized operators (i.e. `|` and pmin, pmax) here just to be consistent with ifelse, which is a vectorized function; but in fact we'll only be performing the operations on a pair of single values
   res <- sapply(model$rules, function(i) eval(parse(text=i)))
   if (na.replace) res[is.na(res)] <- 0
   if (discrt) res <- as.integer(res)
@@ -158,7 +158,7 @@ get.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, discrt=T
   vec
 }
 
-discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, model) {
+discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, na.replace=TRUE, model) {
   # produce input vector for iMAT:
   # average across all samples in the data into a single vector of expression values of all genes, then select only those genes in the model, then discretize the expression values into low (-1L), medium (0L), and high (1L), missing genes (i.e. model genes that are not in the expression data) will be NA's.
 
@@ -170,10 +170,14 @@ discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, model) {
   vec <- rowMeans(mat)
   vec <- vec[model$genes]
   na.idx <- is.na(vec)
-  cat(sprintf("%d model genes not in the expression data.\n", sum(na.idx)))
+  cat(sprintf("%d model genes not in the expression data, ", sum(na.idx)))
   qlo <- quantile(vec, q.lo, na.rm=TRUE)
   qhi <- quantile(vec, q.hi, na.rm=TRUE)
   vec <- ifelse(vec<qlo, -1L, ifelse(vec>qhi, 1L, 0L))
+  if (na.replace) {
+    vec[na.idx] <- 0L
+    cat("these gene values are set to 0.\n")
+  } else cat("these genes have NA values.\n")
   unname(vec)
 }
 
