@@ -25,9 +25,15 @@ exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
       return(max(a,b))
     }
   } else if (type==1) {
-    `&` <- function(a,b) ifelse(sign(a)!=sign(b) | a==0 | b==0, 0, pmin(a,b)) # if one is NA and the other is 0, for sure the result is 0; all other NA cases are undetermined and NA will be returned
-    `|` <- function(a,b) ifelse(sign(a)==sign(b), pmax(a,b), abs(sign(a)+sign(b))*(a+b)) # all NA cases are undetermined and NA will be returned
-  } # I use bitwise/vectorized operators (i.e. `|` and pmin, pmax) here just to be consistent with ifelse, which is a vectorized function; but in fact we'll only be performing the operations on a pair of single values
+    `&` <- function(a,b) { # if one is NA and the other is 0, for sure the result is 0; all other NA cases are undetermined and NA will be returned
+      if (sign(a)!=sign(b) || a==0 || b==0) return(0)
+      return(min(a,b))
+    }
+    `|` <- function(a,b) { # all NA cases are undetermined and NA will be returned
+      if (sign(a)==sign(b)) return(max(a,b))
+      return(abs(sign(a)+sign(b))*(a+b))
+    }
+  }
   res <- sapply(model$rules, function(i) eval(parse(text=i)))
   if (na.replace) res[is.na(res)] <- 0
   if (discrt) res <- as.integer(res)
