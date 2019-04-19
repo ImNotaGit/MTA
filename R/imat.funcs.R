@@ -35,7 +35,7 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
 form.imat <- function(model, expr, params) {
 
   # reaction data
-  rxns.int.raw <- discrt.genes2rxns(expr, 0, model)
+  rxns.int.raw <- exprs2rxns(expr, 0, model)
   rxns.int <- rxns.int.raw
   # remove integers for dead end rxns
   rxns.int[model$lb==0 & model$ub==0] <- 0

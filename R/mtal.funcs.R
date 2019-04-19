@@ -1,20 +1,20 @@
 library(Matrix)
 library(data.table)
 library(Rcplex.my)
-library(parallel)
+library(future.apply)
 
 lp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
-#nc <- detectCores() # can be unreliable??
-nc <- 4L
+#plan("multiprocess", workers=8L) # customize and run this line in your code
+
  
-mtal <- function(model, v.ref, dflux, del="default", lp.params=lp.pars, ncores=nc) {
+mtal <- function(model, v.ref, dflux, del="default", lp.params=lp.pars) {
   
   # formulate MTA model
-  mtal.model <- form.mtal(model, v.ref, dflux)
+  mtal.model <- form.mtal(model=model, v.ref=v.ref, dflux=dflux)
 
-  # run the MTA MIQP
+  # run MTA
   if (length(del)==1 && del=="default") del <- 0:ncol(model$S)
-  run.mtal(mtal.model, del, lp.params, ncores)
+  run.mtal(model=mtal.model, del=del, params=lp.params)
 }
 
 form.mtal <- function(model, v.ref, dflux) {
@@ -70,37 +70,36 @@ form.mtal <- function(model, v.ref, dflux) {
        c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub)
 }
 
-run.mtal <- function(model, del, params, ncores) {
+run.mtal <- function(model, del, params) {
   
   #x0 <- run.lp(model, 0, NULL, params)$xopt # warm start solution
   #if (length(x0)==1 && is.na(x0)) x0 <- NULL
   names(del) <- del
-  res <- mclapply(del, function(i) {
-    lp.res <- run.lp(model, i, NULL, params)
-    analyz.mtal.res(model, lp.res)
-  }, mc.cores=ncores)
+  res <- future_lapply(del, function(i) {
+    lp.res <- run.lp(model=model, del=i, x0=NULL, params=params)
+    analyz.mtal.res(model=model, lp.res=lp.res)
+  })
 
   # close CPLEX
   Rcplex.close()
 
   res <- rbindlist(res, idcol="del.rxn")
+  res[, del.rxn:=as.integer(del.rxn)]
 
-  # if parallelling, the warning messages from each core won't show up, so give a summary here if any
-  e <- res[is.na(solv.stat) | solv.stat!="1"]
+  # give a summary here of (potential) optimization issues if any
+  e <- res[solv.stat!="1", .(del.rxn, solv.stat)]
   if (nrow(e)>0) {
-    for (i in 1:nrow(e)) {
-      warning("MTA: Potential problem or failed running LP for del=", e[i, del.rxn], ". Solver status: ", e[i, solv.stat], ".\n")
-    }
+    cat("MTA: Potential problem or failed running LP for the case(s) below:\n")
+    print(e)
   }
-
-  res[, del.rxn:=as.integer(del.rxn)] # just in case later we need to use rxns2genes, which requires numeric rxn indeces
-  rbind(res[del.rxn==0], res[del.rxn!=0][order(-score.adj)])
+  
+  #res <- rbind(res[del.rxn==0], res[del.rxn!=0][order(-score.mta)])
+  res
 }
 
 run.lp <- function(model, del, x0, params) {
 
   cvec <- model$c
-  objsense <- "min"
   Amat <- rbind(model$S, model$S)
   bvec <- c(model$rowlb, model$rowub)
   sense <- rep(c("G","L"), c(length(model$rowlb), length(model$rowub)))
@@ -111,17 +110,10 @@ run.lp <- function(model, del, x0, params) {
   
   tryCatch(
     {
-      res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, x0=x0, control=params)
-      res$status <- as.character(res$status)
-      if (res$status!="1") warning("MTA: Potential problem running LP for del=", del, ". Solver status: ", res$status, ".\n")
-      # Not sure why the returned res$obj are NaNs... just manually recover obj
-      if (is.na(res$obj)) res$obj <- sum(model$c * res$xopt)
-      res[c("xopt","obj","status")]
+      res <- Rcplex(cvec=cvec, objsense="min", Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, x0=x0, control=params)
+      list(xopt=res$xopt, obj=ifelse(is.na(res$obj), sum(model$c*res$xopt, na.rm=TRUE), res$obj), status=as.character(res$status))
     },
-    error=function(e) {
-      warning("MTA: Failed running LP for del=", del, ". Message: ", e, "NA returned.\n")
-      list(xopt=NA, obj=NA, status=as.character(e))
-    }
+    error=function(e) list(xopt=NA, obj=NA, status=as.character(e))
   )
 }
 

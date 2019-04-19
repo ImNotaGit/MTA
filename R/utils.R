@@ -81,10 +81,10 @@ prep.data <- function(dat, log="default", norm.method="loess") {
     log <- (qx[5] > 100) || (qx[6]-qx[1] > 50 && qx[2] > 0) || (qx[2] > 0 && qx[2] < 1 && qx[4] > 1 && qx[4] < 2)
   }
   if (log) {
-    nlt0 <- sum(mat<0)
+    nlt0 <- sum(mat<0, na.rm=TRUE)
     if (nlt0>0) {
       warning(sprintf("Log-transformation error: there are %d negative values in the data, the data may be already on log-scale.\nHere is a summary of the data:\n", nlt0))
-      summary(as.vector(mat))
+      print(summary(as.vector(mat)))
       stop()
     }
     mat <- log2(mat+1)

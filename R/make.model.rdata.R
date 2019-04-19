@@ -135,3 +135,57 @@ elegcyc$S <- Matrix(elegcyc$S, sparse=TRUE)
 
 
 save(elegcyc, file="ElegCyc.RData")
+
+
+### ---- iMM1415 (mice) ----
+
+# from .mat
+
+tmp <- readMat("../models/iMM1415.mat")
+
+# tmp[[1]] contains the model but as an array, each element of the array being a field of the MATLAB struct... so need to use apply
+# for some weird reason each element of the array is a deeply nested list, so use rlist::list.flatten to make each of them a simple list of only one level
+# cannot use unlist here because it can flattern things directly to vectors and discarding NULLs/empty values.
+iMM1415 <- apply(tmp[[1]], 1, function(x) list.flatten(x))
+# then manually unlist each of the simple lists, so that NULLs/empty values are not lost
+iMM1415 <- lapply(iMM1415, function(x) {
+  # if of length 1, just extract x[[1]], simplify to vector when appropriate
+  if (length(x)==1) {
+    res <- x[[1]]
+    if (is.matrix(res) && (nrow(res)==1 || ncol(res)==1)) res <- as.vector(res)
+  } else { # if length >1, carefully unlist into a vector so that NULLs/empty values are not lost
+    res <- unname(sapply(x, function(y) {
+      y <- as.vector(y) # y can be a (single-element or empty) matrix/array, so as.vector
+      if (length(y)==0 || is.null(y) || y=="") y <- NA
+      y
+    }))
+  }
+  return(res)
+})
+
+# modify the genes field
+gid <- iMM1415$genes # gene entrez ids
+# gene ids to gene symbols
+library("org.Mm.eg.db")
+mapp <- select(org.Mm.eg.db, keys=gid, columns=c("ENTREZID","SYMBOL"), keytype="ENTREZID") # 1:1 mapping (with NA's)
+all(gid==mapp$ENTREZID) # TRUE
+iMM1415$gene.ids <- gid
+iMM1415$genes <- ifelse(is.na(mapp$SYMBOL), gid, mapp$SYMBOL)
+# rules mapping genes to reactions
+rules <- sapply(iMM1415$grRules, function(x) {
+  if (is.na(x)) {
+    x <- "0"
+  } else {
+    x <- str_replace_all(x, "[0-9]+", function(x) paste0("x[", match(x, gid), "]"))
+    x <- str_replace_all(x, "and", "&")
+    x <- str_replace_all(x, "or", "\\|")
+  }
+})
+iMM1415$rules <- unname(rules)
+iMM1415$rowlb <- iMM1415$b # all 0
+iMM1415$rowub <- iMM1415$b # all 0
+iMM1415$S <- Matrix(iMM1415$S, sparse=TRUE)
+
+save(iMM1415, file="iMM1415.RData")
+
+

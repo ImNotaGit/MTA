@@ -37,6 +37,41 @@ rm(user)
 #model <- elegcyc[c("genes","rules")]
 #save(model, file="elegcyc.data.RData")
 
+# iMM1415 (mice) model data
+#mice <- readMat("/home/fountain/Documents/Projects/ourtools/MTA/models/iMM1415.mat")
+#gid <- unname(unlist(mice[[1]][[4]])) # gene ids
+## gene ids to gene symbols
+#library("org.Mm.eg.db")
+#mapp <- select(org.Mm.eg.db, keys=gid, columns=c("ENTREZID","SYMBOL"), keytype="ENTREZID") # 1:1 mapping (with NA's)
+#all(gid==mapp$ENTREZID) # TRUE
+#model.gene.symbols <- ifelse(is.na(mapp$SYMBOL), gid, mapp$SYMBOL)
+## rules mapping genes to reactions
+#model.rxn.rules <- sapply(mice[[1]][[6]], function(x) {
+#  x <- unlist(x)
+#  if (length(x)==0) {
+#    x <- "0"
+#  } else {
+#    x <- str_replace_all(x, "[0-9]+", function(x) paste0("x[", match(x, gid), "]"))
+#    x <- str_replace_all(x, "and", "&")
+#    x <- str_replace_all(x, "or", "\\|")
+#  }
+#})
+#model <- list(genes=model.gene.symbols, rules=model.rxn.rules)
+#save(model, file="iMM1415.data.RData")
+# the iMM1415.mat model doesn't have a rules field... so create it backward from R...
+#rules <- sapply(mice[[1]][[6]], function(x) {
+#  x <- unlist(x)
+#  if (length(x)==0) {
+#    x <- ""
+#  } else {
+#    x <- str_replace_all(x, "[0-9]+", function(x) paste0("(x(", match(x, gid), "))"))
+#    x <- str_replace_all(x, "and", "&")
+#    x <- str_replace_all(x, "or", "\\|")
+#  }
+#})
+#writeMat("/home/fountain/Documents/Projects/ourtools/MTA/models/iMM1415_rules.mat", rules=rules)
+# then add the rules to iMM1415.mat in matlab
+
 
 use.model <- function(model="recon") {
   if (model=="recon") {
@@ -45,6 +80,9 @@ use.model <- function(model="recon") {
   } else if (model=="elegcyc") {
     load(file.path(mta.path, "Rwrapper", "elegcyc.data.RData"), envir=.GlobalEnv)
     model.mat <<- file.path(mta.path, "models", "elegcyc.mat")
+  } else if (model=="iMM1415") {
+    load(file.path(mta.path, "Rwrapper", "iMM1415.data.RData"), envir=.GlobalEnv)
+    model.mat <<- file.path(mta.path, "models", "iMM1415.mat")
   }
 }
 
@@ -272,7 +310,7 @@ init.matlab.for.mta <- function(server=matlab, cplex=cplex.path, tomlab=tomlab.p
   # add MTA paths
   evaluate(server, paste("addpath", file.path(mta, "matlab", "iMAT")))
   evaluate(server, paste("addpath", file.path(mta, "matlab", "MTA")))
-  evaluate(server, paste("addpath", file.path(mta, "matlab", "models")))
+  evaluate(server, paste("addpath", file.path(mta, "models")))
   # return to current dir
   evaluate(server, paste("cd", getwd()))
 }
