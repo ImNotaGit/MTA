@@ -1,5 +1,7 @@
 library(data.table)
 library(stringr)
+library(parallel)
+library(Rcplex.my)
 
 
 #### ---- metabolic model utils ----
@@ -26,11 +28,11 @@ exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
     }
   } else if (type==1) {
     `&` <- function(a,b) { # if one is NA and the other is 0, for sure the result is 0; all other NA cases are undetermined and NA will be returned
-      if (sign(a)!=sign(b) || a==0 || b==0) return(0)
+      if (isTRUE(sign(a)!=sign(b) || a==0 || b==0)) return(0)
       return(min(a,b))
     }
     `|` <- function(a,b) { # all NA cases are undetermined and NA will be returned
-      if (sign(a)==sign(b)) return(max(a,b))
+      if (isTRUE(sign(a)==sign(b))) return(max(a,b))
       return(abs(sign(a)+sign(b))*(a+b))
     }
   }
@@ -45,7 +47,8 @@ rxns2genes <- function(vec, model) {
   vec[vec==0] <- NA
   res <- lapply(str_extract_all(model$rules[vec], "[1-9][0-9]*"), function(x) unique(model$genes[as.numeric(x)]))
   #if (length(res)==1) res <- res[[1]]
-  return(res)
+  
+  res
 }
 
 genes2rxns <- function(genes, type=0, model) {
@@ -62,7 +65,92 @@ genes2rxns <- function(genes, type=0, model) {
       which(exprs2rxns(tmp, 0, model)==-1)
     })
   }
-  return(res)
+
+  res
+}
+
+get.opt.flux <- function(model, i, dir="max", nc=1L) {
+  # get the max or min flux of the i'th reaction in the model
+  cvec <- rep(0, ncol(model$S))
+  cvec[i] <- 1
+  objsense <- dir
+  Amat <- rbind(model$S, model$S)
+  bvec <- c(model$rowlb, model$rowub)
+  sense <- rep(c("G","L"), c(length(model$rowlb), length(model$rowub)))
+  lb <- model$lb
+  ub <- model$ub
+  
+  res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=10000, tilim=120, threads=nc))
+  if (res$status!=1) warning("Potential problems running LP. Solver status: ", res$status, ".\n")
+  res$xopt[i]
+}
+
+rm.rxns <- function(model, vec) {
+  # remove reactions from model
+  # vec is a vector containing the indices of reactions to remove, or a logical vector with length equal to the number of reactions where the reactions to be removed is represented by TRUE
+  if (is.numeric(vec)) {
+    keeps <- setdiff(1:ncol(model$S), vec)
+  } else if (is.logical(vec) && length(vec)==ncol(model$S)) {
+    keeps <- !rms
+  }
+
+  model$S <- model$S[, keeps]
+  model$lb <- model$lb[keeps]
+  model$ub <- model$ub[keeps]
+
+  if ("rxns" %in% names(model)) model$rxns <- model$rxns[keeps]
+  if ("rxnNames" %in% names(model)) model$rxnNames <- model$rxnNames[keeps]
+  if ("rxnConfidenceScores" %in% names(model)) model$rxnConfidenceScores <- model$rxnConfidenceScores[keeps]
+  if ("rxnECNumbers" %in% names(model)) model$rxnECNumbers <- model$rxnECNumbers[keeps]
+  if ("rxnReferences" %in% names(model)) model$rxnReferences <- model$rxnReferences[keeps]
+  if ("subSystems" %in% names(model)) model$subSystems <- model$subSystems[keeps]
+  if ("rev" %in% names(model)) model$rev <- model$rev[keeps]
+  if ("c" %in% names(model)) model$c <- model$c[keeps]
+  if ("int.vars" %in% names(model)) model$int.vars <- model$int.vars[keeps]
+  if ("rules" %in% names(model)) {
+    model$rules <- model$rules[keeps]
+    # remove the genes that are no longer present in the model
+    gns.keep <- as.numeric(unique(unlist(str_extract_all(model$rules, "[0-9]+"))))
+    gns.rm <- setdiff(1:length(model$genes), gns.keep)
+    model$genes[gns.rm] <- NA # set to NA to avoid disrupting the indices of rest of the genes
+    if ("gene.ids" %in% names(model)) model$gene.ids[gns.rm] <- NA
+  }
+  if ("grRules" %in% names(model)) model$grRules <- model$grRules[keeps]
+  if ("rxnGeneMat" %in% names(model)) model$rxnGeneMat <- model$rxnGeneMat[keeps, ]
+
+  # remove the metabolites that are no longer present in the model
+  mkeeps <- apply(model$S, 1, function(x) any(x!=0))
+  model$S <- model$S[mkeeps, ]
+  if ("mets" %in% names(model)) model$mets <- model$mets[keeps]
+  if ("metNames" %in% names(model)) model$metNames <- model$metNames[keeps]
+  if ("metFormulas" %in% names(model)) model$metFormulas <- model$metFormulas[keeps]
+  if ("metCharges" %in% names(model)) model$metCharges <- model$metCharges[keeps]
+  if ("met.production" %in% names(model)) model$met.production <- model$met.production[keeps]
+  if ("rowlb" %in% names(model)) model$rowlb <- model$rowlb[keeps]
+  if ("rowub" %in% names(model)) model$rowub <- model$rowub[keeps]
+  if ("b" %in% names(model)) model$b <- model$b[keeps]
+  if ("csense" %in% names(model)) model$csense <- model$csense[keeps]
+
+  # if resulting in metabolites that are only produced or only consumed, give a warning
+  if (any(apply(model$S, 1, function(x) all(x>=0) || all(x<=0)))) warning("The returned model contains metabolites that are produced or consumed only. Please manually check and fix this.\n")
+
+  model
+}
+
+preprocess.model <- function(model, nc=1L) {
+  # preprocess metabolic model by removing the fixed reactions (i.e. those in practise must carry fixed fluxes, including zero, based on the model constraints)
+  ub <- unlist(mclapply(1:ncol(model$S), get.opt.flux, model=model, dir="max", mc.cores=nc))
+  ub <- pmin(model$ub, ub)
+  lb <- unlist(mclapply(1:ncol(model$S), get.opt.flux, model=model, dir="min", mc.cores=nc))
+  lb <- pmax(model$lb, lb)
+
+  `%gt%` <- function(x, y) x-y > sqrt(.Machine$double.eps) # "substantially" greater than, in the way of all.equal
+  nfx <- ub %gt% lb # non-fixed cases
+  fx <- !nfx # all other cases: we expect that in all these cases, ub equals or nearly equals lb
+  model <- rm.rxns(model, fx)
+  model$b <- as.vector(model$b - model$S[, fx] %*% lb[fx]) # for the "fixed" cases, we expect ub equals or nearly equals lb, so just use lb here to correct for b
+  
+  model
 }
 
 
