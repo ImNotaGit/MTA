@@ -121,15 +121,15 @@ rm.rxns <- function(model, vec) {
   # remove the metabolites that are no longer present in the model
   mkeeps <- apply(model$S, 1, function(x) any(x!=0))
   model$S <- model$S[mkeeps, ]
-  if ("mets" %in% names(model)) model$mets <- model$mets[keeps]
-  if ("metNames" %in% names(model)) model$metNames <- model$metNames[keeps]
-  if ("metFormulas" %in% names(model)) model$metFormulas <- model$metFormulas[keeps]
-  if ("metCharges" %in% names(model)) model$metCharges <- model$metCharges[keeps]
-  if ("met.production" %in% names(model)) model$met.production <- model$met.production[keeps]
-  if ("rowlb" %in% names(model)) model$rowlb <- model$rowlb[keeps]
-  if ("rowub" %in% names(model)) model$rowub <- model$rowub[keeps]
-  if ("b" %in% names(model)) model$b <- model$b[keeps]
-  if ("csense" %in% names(model)) model$csense <- model$csense[keeps]
+  if ("mets" %in% names(model)) model$mets <- model$mets[mkeeps]
+  if ("metNames" %in% names(model)) model$metNames <- model$metNames[mkeeps]
+  if ("metFormulas" %in% names(model)) model$metFormulas <- model$metFormulas[mkeeps]
+  if ("metCharges" %in% names(model)) model$metCharges <- model$metCharges[mkeeps]
+  if ("met.production" %in% names(model)) model$met.production <- model$met.production[mkeeps]
+  if ("rowlb" %in% names(model)) model$rowlb <- model$rowlb[mkeeps]
+  if ("rowub" %in% names(model)) model$rowub <- model$rowub[mkeeps]
+  if ("b" %in% names(model)) model$b <- model$b[mkeeps]
+  if ("csense" %in% names(model)) model$csense <- model$csense[mkeeps]
 
   # if resulting in metabolites that are only produced or only consumed, give a warning
   pr <- apply(model$S, 1, function(x) all(x>=0 & model$lb>=0 | x<=0 & model$ub<=0))
@@ -152,6 +152,7 @@ preprocess.model <- function(model, nc=1L) {
   fx <- !nfx # all other cases: we expect that in all these cases, ub equals or nearly equals lb
   model$b <- as.vector(model$b - model$S[, fx] %*% lb[fx]) # for the "fixed" cases, we expect ub equals or nearly equals lb, so just use lb here to correct for b
   model <- rm.rxns(model, fx)
+  cat(sum(fx), "fixed reactions removed. Now the model contains", ncol(model$S), "reactions and", nrow(model$S), "metabolites.\n")
   
   model
 }
