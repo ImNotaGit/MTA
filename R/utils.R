@@ -91,7 +91,7 @@ rm.rxns <- function(model, vec) {
   if (is.numeric(vec)) {
     keeps <- setdiff(1:ncol(model$S), vec)
   } else if (is.logical(vec) && length(vec)==ncol(model$S)) {
-    keeps <- !rms
+    keeps <- !vec
   }
 
   model$S <- model$S[, keeps]
