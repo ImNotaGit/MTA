@@ -143,6 +143,7 @@ preprocess.model <- function(model, nc=1L) {
   ub <- pmin(model$ub, ub)
   lb <- unlist(mclapply(1:ncol(model$S), get.opt.flux, model=model, dir="min", mc.cores=nc))
   lb <- pmax(model$lb, lb)
+  Rcplex.close()
 
   `%gt%` <- function(x, y) x-y > sqrt(.Machine$double.eps) # "substantially" greater than, in the way of all.equal
   nfx <- ub %gt% lb # non-fixed cases

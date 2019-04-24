@@ -33,7 +33,7 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
   model
 }
 
-imat.mep <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, mep.params=mep.pars) {
+imat.mep <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, mep.params=mep.pars, nc=1L) {
   
   # model as environment
   model <- as.environment(model)
@@ -48,7 +48,8 @@ imat.mep <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, 
   update.model(model, imat.model, sol=1, imat.params) # model updated in place since it's an environment
 
   # process model for MEP
-  preprocess.model(model) # model modified in place since it's an environment
+  cat("Preparing for MEP...\n")
+  preprocess.model(model, nc=nc) # model modified in place since it's an environment
 
   # close CPLEX
   Rcplex.close()
