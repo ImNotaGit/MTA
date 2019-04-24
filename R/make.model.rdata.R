@@ -185,6 +185,7 @@ iMM1415$rules <- unname(rules)
 iMM1415$rowlb <- iMM1415$b # all 0
 iMM1415$rowub <- iMM1415$b # all 0
 iMM1415$S <- Matrix(iMM1415$S, sparse=TRUE)
+iMM1415$csense <- str_split(iMM1415$csense, "")
 
 save(iMM1415, file="iMM1415.RData")
 
