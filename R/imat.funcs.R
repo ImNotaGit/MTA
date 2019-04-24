@@ -7,6 +7,7 @@ library(Rcplex.my)
 imat.pars <- list(flux.act=1, flux.inact=0.1, flux.bound=1000)
 milp.pars <- list(trace=1, nodesel=0, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1)
 sampl.pars <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400, ncores=detectCores())
+mep.pars <- list(beta=1e9, damp=0.9, max.iter=2000, dlb=1e-50, dub=1e50, epsil=1e-6, fix.flux=FALSE, fflux.id=0, fflux.mean=0, fflux.var=0)
 
 imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
   
@@ -28,6 +29,33 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
   # close CPLEX
   Rcplex.close()
 
+  # return
+  model
+}
+
+imat.mep <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, mep.params=mep.pars) {
+  
+  # model as environment
+  model <- as.environment(model)
+
+  # formulate iMAT model, return an environment
+  imat.model <- form.imat(model, expr, imat.params)
+
+  # run the iMAT MILP
+  run.imat(imat.model, milp.params) # imat.model modified in place since it's an environment
+
+  # update the original metabolic model based on iMAT result
+  update.model(model, imat.model, sol=1, imat.params) # model updated in place since it's an environment
+
+  # process model for MEP
+  preprocess.model(model) # model modified in place since it's an environment
+
+  # close CPLEX
+  Rcplex.close()
+
+  # run MEP to get the fluxes of the reference state
+  run.mep(model, mep.params) # results added to model in place since it's an environment
+  
   # return
   model
 }
@@ -111,11 +139,13 @@ run.imat <- function(model, params) {
   stats <- unique(stats[!stats %in% c(101,102,129,130)])
 
   if (length(stats)>0) {
-    model$milp.out <- res # model is an environment, so will be modified outside this function
+    model$milp.out <- res
     stop("iMAT: Potential problems running MILP. Please check before going on. Solver status: ", paste(stats, collapse=", "), ".\n")
   }
 
-  model$milp.out <- res # model is an environment, so will be modified outside this function
+  model$milp.out <- res
+
+  model
 }
 
 update.model <- function(model, imat.res, sol=1, params) {
@@ -129,10 +159,12 @@ update.model <- function(model, imat.res, sol=1, params) {
   inact <- imat.res$rxns.inact[y0==1]
   inact.rev <- intersect(inact, imat.res$rxns.inact.rev)
   
-  # update model: model is an environment, so will be modified outside this function
+  # update model
   model$lb[fw] <- params$flux.act
   model$ub[bk] <- -params$flux.act
   model$ub[inact] <- params$flux.inact
   model$lb[inact.rev] <- -params$flux.inact
+
+  model
 }
 

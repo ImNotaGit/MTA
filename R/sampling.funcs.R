@@ -8,11 +8,10 @@ library(RcppArmadillo)
 # need to source achr.cpp in the same dir with sourceCpp("achr.cpp")
 
 sample.model <- function(model, params) {
-  if ("sampl" %in% ls(model)) {
+  if ("sampl" %in% ls(model)) { # ls(model) works for model as either an environment or a list; but here we intend it to be an environment
     cat("Will use the warmup points and status stored in the model.\n")
     cat("Will sample", params$n.sampl, "points.\n")
     res <- achr(model, model$sampl$stat, model$sampl$warmup.pnts, params$n.sampl, params$steps.per.pnt)
-    # model is an environment, modified in place outside this function
     model$sampl$stat <- res$stat
     model$sampl$pnts <- cbind(model$sampl$pnts, res$sampl.pnts)
     model$sampl$mean.rng <- c(params$n.burnin+1, ncol(model$sampl$pnts))
@@ -23,7 +22,6 @@ sample.model <- function(model, params) {
     init.stat <- list(centr.pnt=centr.pnt, prev.pnt=centr.pnt, n.tot.steps=0)
     cat("Will sample", params$n.sampl, "points after", params$n.burnin, "burn-in points.\n")
     res <- achr(model, init.stat, warmup.pnts, params$n.burnin+params$n.sampl, params$steps.per.pnt)
-    # model is an environment, modified in place outside this function
     model$sampl <- list()
     model$sampl$warmup.pnts <- warmup.pnts
     model$sampl$stat <- res$stat
@@ -31,6 +29,8 @@ sample.model <- function(model, params) {
     model$sampl$mean.rng <- c(params$n.burnin+1, ncol(model$sampl$pnts))
     model$sampl$mean <- rowMeans(model$sampl$pnts[, model$sampl$mean.rng[1]:model$sampl$mean.rng[2]])
   }
+
+  model
 }
 
 sample.warmup.pnts <- function(model, n, ncores) {
