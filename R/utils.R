@@ -132,7 +132,9 @@ rm.rxns <- function(model, vec) {
   if ("csense" %in% names(model)) model$csense <- model$csense[keeps]
 
   # if resulting in metabolites that are only produced or only consumed, give a warning
-  if (any(apply(model$S, 1, function(x) all(x>=0) || all(x<=0)))) warning("The returned model contains metabolites that are produced or consumed only. Please manually check and fix this.\n")
+  pr <- apply(model$S, 1, function(x) all(x>=0 & model$lb>=0 | x<=0 & model$ub<=0))
+  co <- apply(model$S, 1, function(x) all(x>=0 & model$ub<=0 | x<=0 & model$lb>=0))
+  if (any(pr|co)) warning("The returned model contains metabolites that are produced or consumed only. Please manually check and fix this.\n")
 
   model
 }
@@ -148,8 +150,8 @@ preprocess.model <- function(model, nc=1L) {
   `%gt%` <- function(x, y) x-y > sqrt(.Machine$double.eps) # "substantially" greater than, in the way of all.equal
   nfx <- ub %gt% lb # non-fixed cases
   fx <- !nfx # all other cases: we expect that in all these cases, ub equals or nearly equals lb
-  model <- rm.rxns(model, fx)
   model$b <- as.vector(model$b - model$S[, fx] %*% lb[fx]) # for the "fixed" cases, we expect ub equals or nearly equals lb, so just use lb here to correct for b
+  model <- rm.rxns(model, fx)
   
   model
 }
