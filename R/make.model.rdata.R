@@ -47,6 +47,87 @@ recon1$description <- "Recon 1"
 save(recon1, file="Recon1.RData")
 
 
+### ---- Recon 2.2 ----
+
+validateSBMLdocument("../models/Recon2.2.xml")
+tmp <- readSBMLmod("../models/Recon2.2.xml")
+
+recon2.2 <- list()
+recon2.2$description <- tmp@mod_desc
+recon2.2$modelName <- tmp@mod_name
+recon2.2$modelVersion <- tmp@version
+recon2.2$comps <- tmp@mod_compart
+recon2.2$mets <- tmp@met_id
+recon2.2$metNames <- tmp@met_name
+recon2.2$metCharges <- tmp@met_attr$charge
+recon2.2$metFormulas <- tmp@met_attr$chemicalFormula
+recon2.2$rxns <- tmp@react_id
+recon2.2$rxnNames <- tmp@react_name
+recon2.2$S <- tmp@S
+recon2.2$lb <- tmp@lowbnd
+recon2.2$ub <- tmp@uppbnd
+recon2.2$c <- tmp@obj_coef
+recon2.2$rowlb <- rep(0, length(tmp@met_id))
+recon2.2$rowub <- rep(0, length(tmp@met_id))
+recon2.2$b <- rep(0, length(tmp@met_id))
+recon2.2$rxnGeneMat <- tmp@rxnGeneMat
+recon2.2$subSystems <- tmp@subSys
+recon2.2$rules <- tmp@gprRules
+# gene symbols
+library(biomaRt)
+mart <- useMart(biomart="ensembl", dataset="hsapiens_gene_ensembl")
+tmp1 <- getBM(attributes=c("hgnc_id", "hgnc_symbol"), filters="hgnc_id", values=tmp@allGenes, mart=mart)
+anyDuplicated(tmp1$hgnc_id) # 0
+setdiff(tmp@allGenes, tmp1$hgnc_id) # some bad IDs, and others somehow not matched by biomart, manually map them to gene symbols based on the HGNC database
+tmp1 <- rbind(tmp1, data.frame(hgnc_id=c("HGNC:HGNC:987","HGNC:HGNC:2898","HGNC:8780","HGNC:8789","HGNC:8790","HGNC:8903","HGNC:14423","HGNC:11240"), hgnc_symbol=c("BCKDHB","DLD","PDE4A","PDE6G","PDE6H","PGLS","RDH8","SPHK1")))
+all(tmp@allGenes %in% tmp1$hgnc_id) # now TRUE
+tmp1 <- as.data.table(tmp1)
+recon2.2$genes <- tmp1[match(tmp@allGenes, hgnc_id), hgnc_symbol]
+
+save(recon2.2, file="recon2.2.RData")
+
+
+### ---- Recon 3D ----
+
+tmp <- readMat("../models/Recon3D_301/Recon3DModel_301.mat")
+
+# tmp[[1]] contains the model but as an array, each element of the array being a field of the MATLAB struct... so need to use apply
+# for some weird reason each element of the array is a deeply nested list, so use rlist::list.flatten to make each of them a simple list of only one level
+# cannot use unlist here because it can flattern things directly to vectors and discarding NULLs/empty values.
+recon3d <- apply(tmp[[1]], 1, function(x) list.flatten(x))
+# then manually unlist each of the simple lists, so that NULLs/empty values are not lost
+recon3d <- lapply(recon3d, function(x) {
+  # if of length 1, just extract x[[1]], simplify to vector when appropriate
+  if (length(x)==1) {
+    res <- x[[1]]
+    if (is.matrix(res) && (nrow(res)==1 || ncol(res)==1)) res <- as.vector(res)
+  } else { # if length >1, carefully unlist into a vector so that NULLs/empty values are not lost
+    res <- unname(sapply(x, function(y) {
+      y <- as.vector(y) # y can be a (single-element or empty) matrix/array, so as.vector
+      if (length(y)==0 || is.null(y) || y=="") y <- NA
+      y
+    }))
+  }
+  return(res)
+})
+
+# gene symbols
+recon3d$gene.ids <- recon3d$genes
+gid <- str_split(recon3d$gene.ids, "\\.", simplify=TRUE)[,1]
+library("org.Hs.eg.db")
+mapp <- select(org.Hs.eg.db, keys=gid, columns=c("ENTREZID","SYMBOL"), keytype="ENTREZID") # many:1 mapping (with NA's)
+all(gid==mapp$ENTREZID) # TRUE
+recon3d$genes <- ifelse(is.na(mapp$SYMBOL), recon3d$gene.ids, mapp$SYMBOL)
+
+# format the "rules" field
+recon3d$rules <- unname(sapply(recon3d$rules, function(x) {
+  if (is.na(x)) x <- "0"
+  str_replace_all(x, "x\\(([0-9]+)\\)", "x\\[\\1\\]")
+}))
+
+save(recon3d, file="Recon3D.RData")
+
+
 ### ---- ElegCyc ----
 
 validateSBMLdocument("../models/Celegans_2016_2.xml")
@@ -141,7 +222,7 @@ save(elegcyc, file="ElegCyc.RData")
 
 # from .mat
 
-tmp <- readMat("../models/iMM1415.mat")
+tmp <- readMat("../models/BiGG/iMM1415.mat")
 
 # tmp[[1]] contains the model but as an array, each element of the array being a field of the MATLAB struct... so need to use apply
 # for some weird reason each element of the array is a deeply nested list, so use rlist::list.flatten to make each of them a simple list of only one level
