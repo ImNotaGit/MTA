@@ -1,10 +1,11 @@
 library(data.table)
 library(stringr)
 library(parallel)
-library(Rcplex.my)
 
 
 #### ---- metabolic model utils ----
+
+library(Rcplex.my)
 
 exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
   # map a vector of expression values either meant to be levels or direction of changes of genes to those of the reactions in the metabolic model
@@ -82,7 +83,7 @@ get.opt.flux <- function(model, i, dir="max", nc=1L) {
   
   res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=10000, tilim=120, threads=nc))
   if (res$status!=1) warning("Potential problems running LP. Solver status: ", res$status, ".\n")
-  res$xopt[i]
+  res$obj
 }
 
 rm.rxns <- function(model, vec) {
@@ -150,7 +151,9 @@ preprocess.model <- function(model, nc=1L) {
   `%gt%` <- function(x, y) x-y > sqrt(.Machine$double.eps) # "substantially" greater than, in the way of all.equal
   nfx <- ub %gt% lb # non-fixed cases
   fx <- !nfx # all other cases: we expect that in all these cases, ub equals or nearly equals lb
-  model$b <- as.vector(model$b - model$S[, fx] %*% lb[fx]) # for the "fixed" cases, we expect ub equals or nearly equals lb, so just use lb here to correct for b
+  if ("b" %in% names(model)) model$b <- as.vector(model$b - model$S[, fx] %*% lb[fx]) # for the "fixed" cases, we expect ub equals or nearly equals lb, so just use lb here to correct for b
+  if ("rowlb" %in% names(model)) model$rowlb <- as.vector(model$rowlb - model$S[, fx] %*% lb[fx])
+  if ("rowub" %in% names(model)) model$rowub <- as.vector(model$rowub - model$S[, fx] %*% lb[fx])
   model <- rm.rxns(model, fx)
   cat(sum(fx), "fixed reactions removed. Now the model contains", ncol(model$S), "reactions and", nrow(model$S), "metabolites.\n")
   
@@ -158,71 +161,114 @@ preprocess.model <- function(model, nc=1L) {
 }
 
 
-#### ---- data preprocessing and matlab input file generating ----
+#### ---- visualization ----
 
-library(GEOquery)
+library(hypergraph)
+library(hyperdraw)
+library(RColorBrewer)
 
-prep.data <- function(dat, log="default", norm.method="loess") {
-  # prepare expression data: transformation, normalization, etc.
-  library(affy)
+plot.model <- function(model, rxn.ids=1:length(model$rxns), fluxes=rep(1, length(rxns)), dfluxes=rep(0, length(rxns)), met.ids=1:length(model$mets), mets.dup=c(), layout="dot", mode=0, lwd.rng=c(0.5,10), cols=c("green4","grey","red3"), plt.margins=c(150,150,150,150)) {
+  # model: the base metabolic model
+  # rxn.ids: IDs of the reactions to plot
+  # fluxes and dfluxes: the reference fluxes and flux changes of the reactions in rxn.ids
+  # met.ids: IDs of the metabolites to plot
+  # mets.dup: names of metabolites (as in model$mets) to be plot as separate nodes for each reaction, when they are recurrent in multiple reactions
+  # layout
+  # mode 0: line width represents dfluxes, line color represents the direction of dfluxes; mode 1: line width represents fluxes, and line color represents dfluxes
+  # lwd.rng: range of line widths to use
+  # cols: color values for decreased, unchanged, and increased fluxes (decrease/increase in terms of absolute value)
+  # plt.margins: plot margins on the up, bottome, left, and right
   
-  if (class(dat)=="ExpressionSet") {
-    # for featureData, fix potential improper column names so that later limma::topTable can use them
-    fvarLabels(dat) <- make.names(fvarLabels(dat))
-    mat <- exprs(dat)
-  } else if (is.matrix(dat)) mat <- dat
-  
-  # log2 transform
-  if (log=="default") {
-    # following the method as in GEO2R, for microarray data
-    qx <- as.numeric(quantile(mat, c(0, 0.25, 0.5, 0.75, 0.99, 1), na.rm=TRUE))
-    log <- (qx[5] > 100) || (qx[6]-qx[1] > 50 && qx[2] > 0) || (qx[2] > 0 && qx[2] < 1 && qx[4] > 1 && qx[4] < 2)
-  }
-  if (log) {
-    nlt0 <- sum(mat<0, na.rm=TRUE)
-    if (nlt0>0) {
-      warning(sprintf("Log-transformation error: there are %d negative values in the data, the data may be already on log-scale.\nHere is a summary of the data:\n", nlt0))
-      print(summary(as.vector(mat)))
-      stop()
+  # build hyperedges from rxns
+  rxns <- model$rxns[rxn.ids]
+  mets <- model$mets[met.ids]
+  hyperedges <- lapply(1:length(rxn.ids), function(i) {
+    rxn.id <- rxn.ids[i]
+    rxn <- rxns[i]
+    flux <- fluxes[i]
+    x <- model$S[met.ids, rxn.id]
+    reactants <- mets[x<0]
+    mdup <- reactants %in% mets.dup
+    reactants[mdup] <- paste0(reactants[mdup], i)
+    products <- mets[x>0]
+    mdup <- products %in% mets.dup
+    products[mdup] <- paste0(products[mdup], i)
+    if (flux>=0) {
+      res <- DirectedHyperedge(reactants, products, label=rxn)
+    } else {
+      res <- DirectedHyperedge(products, reactants, label=rxn)
     }
-    mat <- log2(mat+1)
-    cat("log2-transformation performed.\n")
-  } else cat("log2-transformation NOT performed.\n")
-
-  # normalization
-  if (norm.method=="loess") {
-    nna <- sum(is.na(mat))
-    if (nna>0) {
-      stop(sprintf("Loess normalization error: there are %d NA/NaN's in the data.\n", nna))
-    } else mat <- normalize.loess(mat, log.it=FALSE)
-  } else if (norm.method=="quantile") {
-    mat <- limma::normalizeQuantiles(mat)
-  } else cat("Normalization NOT performed.\n")
+    res
+  })
   
-  # return
-  if (class(dat)=="ExpressionSet") {
-    exprs(dat) <- mat
-    return(dat)
-  } else if (is.matrix(dat)) return(mat)
+  # build graph object
+  node.names <- unique(unlist(lapply(hyperedges, function(x) c(x@head, x@tail))))
+  hg <- Hypergraph(node.names, hyperedges)
+  testbph <- graphBPH(hg)
+  my.graph <- graphLayout(testbph, layoutType=layout)
+  
+  nodeDataDefaults(my.graph, "shape") <- "box"
+  nodeDataDefaults(my.graph, "margin") <- 'unit(3, "mm")'  
+  edgeDataDefaults(my.graph, "lwd") <- 1
+  graphDataDefaults(my.graph, "arrowLoc") <- "end"
+  
+  df <- ifelse(sign(fluxes)*sign(dfluxes)>=0, abs(dfluxes), -abs(dfluxes)) / abs(fluxes)
+  df[is.nan(df)] <- 0
+  df.med <- median(df)
+  df.3mad <- 3*median(abs(df-df.med))
+  df.ub <- df.med+df.3mad
+  df.lb <- df.med-df.3mad
+  df[df>df.ub] <- df.ub
+  df[df<df.lb] <- df.lb
+  if (mode==0) {
+    # line widths represents dfluxes, line color means the direction of dfluxes
+    ## line widths
+    lwds <- abs(df) / median(abs(df)) * (lwd.rng[1]+lwd.rng[2])/2
+    lwds[is.nan(lwds)] <- (lwd.rng[1]+lwd.rng[2])/2
+    lwds[lwds<lwd.rng[1]] <- lwd.rng[1]
+    lwds[lwds>lwd.rng[2]] <- lwd.rng[2]
+    ## line colors
+    cols <- ifelse(df>0, cols[3], ifelse(df<0, cols[1], cols[2]))
+  } else if (mode==1) {
+    # line widths means fluxes, and line colors means dfluxes
+    ## line widths
+    lwds <- abs(fluxes) / max(abs(fluxes)) * lwd.rng[2]
+    lwds[lwds<lwd.rng[1]] <- lwd.rng[1]
+    ## line colors
+    if (all(dfluxes==0)) {
+      cols <- rep(cols[2], length(dfluxes))
+    } else {
+      ncols <- max(sum(df>0), sum(df<0))
+      cols <- colorRampPalette(cols)(2*ncols+3)
+      tmp <- as.numeric(cut(c(0, df), ncols+1))
+      delt <- ncols+2 - tmp[1]
+      cols <- cols[tmp[-1]+delt]
+    }
+  }
+  # set line widths and colors
+  for (i in 1:length(rxns)) {
+    rxn <- rxns[i]
+    lwd <- lwds[i]
+    col <- cols[i]
+    lapply(my.graph@edgeNodeIO$outgoing[[rxn]], function(x) edgeData(my.graph, rxn, x, "lwd") <- as.character(lwd))
+    lapply(my.graph@edgeNodeIO$incoming[[rxn]], function(x) edgeData(my.graph, x, rxn, "lwd") <- as.character(lwd))
+    lapply(my.graph@edgeNodeIO$outgoing[[rxn]], function(x) edgeData(my.graph, rxn, x, "color") <- col)
+    lapply(my.graph@edgeNodeIO$incoming[[rxn]], function(x) edgeData(my.graph, x, rxn, "color") <- col)
+  }
+  
+  # set plot margins
+  my.graph@graph@boundBox@botLeft@y <- my.graph@graph@boundBox@botLeft@y-plt.margins[2] #bottom
+  my.graph@graph@boundBox@botLeft@x <- my.graph@graph@boundBox@botLeft@x-plt.margins[3] #left 
+  my.graph@graph@boundBox@upRight@y <- my.graph@graph@boundBox@upRight@y+plt.margins[1] #top
+  my.graph@graph@boundBox@upRight@x <- my.graph@graph@boundBox@upRight@x+plt.margins[4] #right  
+  
+  plot(my.graph)
+  
+  return(my.graph)
 }
 
-de <- function(dat, pheno, model="~.", coef, robust=FALSE, trend=FALSE) {
-  # differential expression analysis
-  library(limma)
-  
-  if (class(dat)=="ExpressionSet") {
-    mat <- exprs(dat)
-    rownames(mat) <- fData(dat)$Gene.symbol
-  } else if (is.matrix(dat)) mat <- dat
-  
-  design <- model.matrix(as.formula(model), pheno)
-  fit <- lmFit(mat, design)
-  fit <- eBayes(fit, robust=robust, trend=trend)
-  res <- as.data.table(topTable(fit, coef=coef, number=Inf))
-  if (length(res)==6) res <- cbind(data.table(id=rownames(mat)), res)
-  setnames(res, c("id","log.fc","ave.expr","t","pval","padj","B"))
-  res
-}
+
+#### ---- data preprocessing for iMAT and MTA ----
 
 get.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, discrt=TRUE, na.replace=TRUE, reverse.de=TRUE) {
   # get the directions of reaction changes as input for MTA
@@ -313,4 +359,6 @@ make.ortho.dflux <- function(seed=0, x) {
   y[fp] <- -y[fp]
   y
 }
+
+
 

@@ -1,20 +1,19 @@
-library(Matrix)
 library(data.table)
+library(Matrix)
+library(parallel)
 library(Rcplex.my)
-library(future.apply)
 
 lp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
-#plan("multiprocess", workers=8L) # customize and run this line in your code
 
  
-mtal <- function(model, v.ref, dflux, del="default", lp.params=lp.pars) {
+mtal <- function(model, v.ref, dflux, del="default", lp.params=lp.pars, nc=1L) {
   
   # formulate MTA model
   mtal.model <- form.mtal(model=model, v.ref=v.ref, dflux=dflux)
 
   # run MTA
   if (length(del)==1 && del=="default") del <- 0:ncol(model$S)
-  run.mtal(model=mtal.model, del=del, params=lp.params)
+  run.mtal(model=mtal.model, del=del, params=lp.params, nc=nc)
 }
 
 form.mtal <- function(model, v.ref, dflux) {
@@ -70,15 +69,15 @@ form.mtal <- function(model, v.ref, dflux) {
        c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub)
 }
 
-run.mtal <- function(model, del, params) {
+run.mtal <- function(model, del, params, nc) {
   
   #x0 <- run.lp(model, 0, NULL, params)$xopt # warm start solution
   #if (length(x0)==1 && is.na(x0)) x0 <- NULL
   names(del) <- del
-  res <- future_lapply(del, function(i) {
+  res <- mclapply(del, function(i) {
     lp.res <- run.lp(model=model, del=i, x0=NULL, params=params)
     analyz.mtal.res(model=model, lp.res=lp.res)
-  })
+  }, mc.cores=nc)
 
   # close CPLEX
   Rcplex.close()
