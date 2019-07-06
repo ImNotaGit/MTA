@@ -70,10 +70,13 @@ genes2rxns <- function(genes, type=0, model) {
   res
 }
 
-get.opt.flux <- function(model, i, dir="max", nc=1L) {
+get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, nc=1L) {
   # get the max or min flux of the i'th reaction in the model
+  # `i` can also be a vector of multiple reaction indices, with coef being their coefficients, then the corresponding linear objective function will be optimized
+  # to knockout reaction(s), pass KO as their indices
+  # if keep.xopt, the optimal xopt vector will also be returned
   cvec <- rep(0, ncol(model$S))
-  cvec[i] <- 1
+  cvec[i] <- coef
   objsense <- dir
   Amat <- rbind(model$S, model$S)
   bvec <- c(model$rowlb, model$rowub)
@@ -83,7 +86,9 @@ get.opt.flux <- function(model, i, dir="max", nc=1L) {
   
   res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=10000, tilim=120, threads=nc))
   if (res$status!=1) warning("Potential problems running LP. Solver status: ", res$status, ".\n")
-  res$obj
+  if (keep.xopt) {
+    return(obj=res$obj, xopt=res$xopt)
+  } else return(res$obj)
 }
 
 rm.rxns <- function(model, vec) {
