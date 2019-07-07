@@ -74,8 +74,8 @@ get.rxn.equation <- function(vec, model) {
   # given a numerical vector corresponding to the reaction indeces in the model, return string vector containing the equations of the corresponding reactions
   sapply(vec, function(i) {
     x <- model$S[, i]
-    rs <- paste(model$mets[x<0], collapse=" + ")
-    ps <- paste(model$mets[x>0], collapse=" + ")
+    rs <- paste(trimws(paste(ifelse(x[x<0]==-1,"",-x[x<0]), model$mets[x<0])), collapse=" + ")
+    ps <- paste(trimws(paste(ifelse(x[x>0]==1,"",x[x>0]), model$mets[x>0])), collapse=" + ")
     if (model$lb[i]>=0) arrow <- "-->" else arrow <- "<==>"
     paste(rs, arrow, ps)
   })
