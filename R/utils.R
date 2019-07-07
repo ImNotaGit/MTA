@@ -83,6 +83,8 @@ get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, 
   sense <- rep(c("G","L"), c(length(model$rowlb), length(model$rowub)))
   lb <- model$lb
   ub <- model$ub
+  lb[ko] <- 0
+  ub[ko] <- 0
   
   res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=10000, tilim=120, threads=nc))
   if (res$status!=1) warning("Potential problems running LP. Solver status: ", res$status, ".\n")
