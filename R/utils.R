@@ -70,6 +70,17 @@ genes2rxns <- function(genes, type=0, model) {
   res
 }
 
+get.rxn.equation <- function(vec, model) {
+  # given a numerical vector corresponding to the reaction indeces in the model, return string vector containing the equations of the corresponding reactions
+  sapply(vec, function(i) {
+    x <- model$S[, i]
+    rs <- paste(model$mets[x<0], collapse=" + ")
+    ps <- paste(model$mets[x>0], collapse=" + ")
+    if (model$lb[i]>=0) arrow <- "-->" else arrow <- "<==>"
+    paste(rs, arrow, ps)
+  })
+}
+
 get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, nc=1L) {
   # get the max or min flux of the i'th reaction in the model
   # `i` can also be a vector of multiple reaction indices, with coef being their coefficients, then the corresponding linear objective function will be optimized
