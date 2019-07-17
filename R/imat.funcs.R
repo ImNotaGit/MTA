@@ -23,8 +23,10 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
   # update the original metabolic model based on iMAT result
   update.model(model, imat.model, sol=1, imat.params) # update model in place
 
-  # sample the metabolic model to get the fluxes of the reference state
-  sample.model(model, sampl.params) # update model in place
+  if (!is.null(sampl.params)) {
+    # sample the metabolic model to get the fluxes of the reference state
+    sample.model(model, sampl.params) # update model in place
+  }
   
   # close CPLEX
   Rcplex.close()
