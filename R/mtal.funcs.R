@@ -6,14 +6,14 @@ library(Rcplex.my)
 lp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
 
  
-mtal <- function(model, v.ref, dflux, del="default", lp.params=lp.pars, nc=1L) {
+mtal <- function(model, v.ref, dflux, del="default", detail=TRUE, lp.params=lp.pars, nc=1L) {
   
   # formulate MTA model
   mtal.model <- form.mtal(model=model, v.ref=v.ref, dflux=dflux)
 
   # run MTA
   if (length(del)==1 && del=="default") del <- 0:ncol(model$S)
-  run.mtal(model=mtal.model, del=del, params=lp.params, nc=nc)
+  run.mtal(model=mtal.model, del=del, detail=detail, params=lp.params, nc=nc)
 }
 
 form.mtal <- function(model, v.ref, dflux) {
@@ -69,14 +69,14 @@ form.mtal <- function(model, v.ref, dflux) {
        c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub)
 }
 
-run.mtal <- function(model, del, params, nc) {
+run.mtal <- function(model, del, detail, params, nc) {
   
   #x0 <- run.lp(model, 0, NULL, params)$xopt # warm start solution
   #if (length(x0)==1 && is.na(x0)) x0 <- NULL
   names(del) <- del
   res <- mclapply(del, function(i) {
     lp.res <- run.lp(model=model, del=i, x0=NULL, params=params)
-    analyz.mtal.res(model=model, lp.res=lp.res)
+    analyz.mtal.res(model=model, lp.res=lp.res, detail=detail)
   }, mc.cores=nc)
 
   # close CPLEX
@@ -116,10 +116,14 @@ run.lp <- function(model, del, x0, params) {
   )
 }
 
-analyz.mtal.res <- function(model, lp.res) {
+analyz.mtal.res <- function(model, lp.res, detail) {
 
   if (is.na(lp.res$xopt) && is.na(lp.res$obj)) {
-    return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.mta=NA, score.mta.uw=NA))
+    if (detail) {
+      return(data.table(solv.stat=lp.res$status, v.opt=NA, v.opt.full=NA, rxns.change.yes=NA, rxns.change.no=NA, advs.change.yes=NA, advs.change.no=NA, advs.steady=NA, score.raw=NA, score.adj=NA, score.mta=NA, score.mta.uw=NA))
+    } else {
+      return(data.table(solv.stat=lp.res$status, score.raw=NA, score.adj=NA, score.mta=NA, score.mta.uw=NA))
+    }
   }
  
   v0 <- model$v.ref
@@ -164,5 +168,9 @@ analyz.mtal.res <- function(model, lp.res) {
   s.mta.uw <- (sum(adv.yes) + sum(v[model$fw.or.bk]) - sum(adv.no)) / s.st.uw # un-weighted
 
   # return
-  data.table(solv.stat=lp.res$status, v.opt=list(v), v.opt.full=list(lp.res$xopt), rxns.change.yes=list(yes), rxns.change.no=list(no), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.steady=list(adv.st), score.raw=s.raw, score.adj=s.adj, score.mta=s.mta, score.mta.uw=s.mta.uw)
+  if (detail) {
+    return(data.table(solv.stat=lp.res$status, v.opt=list(v), v.opt.full=list(lp.res$xopt), rxns.change.yes=list(yes), rxns.change.no=list(no), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.steady=list(adv.st), score.raw=s.raw, score.adj=s.adj, score.mta=s.mta, score.mta.uw=s.mta.uw))
+  } else {
+    return(data.table(solv.stat=lp.res$status, score.raw=s.raw, score.adj=s.adj, score.mta=s.mta, score.mta.uw=s.mta.uw))
+  }
 }
