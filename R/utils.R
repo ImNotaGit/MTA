@@ -1,4 +1,5 @@
 library(data.table)
+library(Matrix)
 library(stringr)
 library(parallel)
 
@@ -176,6 +177,84 @@ preprocess.model <- function(model, nc=1L) {
   cat(sum(fx), "fixed reactions removed. Now the model contains", ncol(model$S), "reactions and", nrow(model$S), "metabolites.\n")
   
   model
+}
+
+get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.range=NULL, rxns="all", nc=1L, padj.cutoff=0.01, r.cutoff=0.1, log.fc.cutoff=0.1) {
+  # do differential flux analysis: imat.model1 compared to imat.model0
+  # if use.sample, use the sampled flux distributions saved in the imat.models, by default, use 1001:end sample points; or specify range of sample points for model0 and model1 respectively in a list
+  # is use.sample==FALSE, then deterimine diff flux by obtaining the min and max fluxes of each reaction for the two models, and regard reactions with either increased lb or increased ub as upregulated and vice versa; ambiguous cases (e.g. lowered lb and increased ub) are regarded as non-differential
+  # by default, rxns="all" means performing the analysis across all reactions; or specify reaction indices; nc is the number of cores for paralleling across the reactions
+  # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed reactions when use.sample==TRUE
+
+  if (rxns=="all") rxns <- 1:length(imat.model0$rxns)
+  
+  if (use.sample) {
+    if (is.null(sample.range)) {
+      sr0 <- 1001:ncol(imat.model0$sampl$pnts)
+      sr1 <- 1001:ncol(imat.model1$sampl$pnts)
+    } else {
+      sr0 <- sample.range[[1]]
+      sr1 <- sample.range[[2]]
+    }
+    dflux.test <- function(s0, s1, ...) {
+      # run wilcox test
+      tryCatch({
+        wilcox.res <- wilcox.test(s0, s1, ...)
+        # p value
+        wilcox.p <- wilcox.res$p.value
+        # effect size for unpaired test: rank biserial correlation
+        wilcox.r <- unname(1 - 2 * wilcox.res$statistic / (length(s0)*length(s1)))
+        # effect size: log ratio of median value
+        m0 <- median(s0)
+        m1 <- median(s1)
+        ldm <- log2(abs(m1) / abs(m0))
+        data.table(lb0=min(s0), ub0=max(s0), med0=m0,
+                   lb1=min(s1), ub1=max(s1), med1=m1,
+                   log.fc=ldm, r=wilcox.r, pval=wilcox.p)
+      }, error=function(e) {
+        data.table(lb0=NA, ub0=NA, med0=NA, lb1=NA, ub1=NA, med1=NA, log.fc=NA, r=NA, pval=NA)
+      })
+    }
+    res <- rbindlist(mclapply(rxns, function(i) dflux.test(imat.model0$sampl$pnts[i, sr0, drop=FALSE], imat.model1$sampl$pnts[i, sr1, drop=FALSE]), mc.cores=nc))
+    res[, padj:=p.adjust(pval, method="BH")]
+    res <- cbind(data.table(id=rxns, rxns=imat.model0$rxns[rxns]), res)
+    res <- res[order(padj, pval)]
+    # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
+    res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(log.fc)>quantile(abs(log.fc), log.fc.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
+    # add summary of flux differences 1: positive value means increased absolute flux, vice versa; 0 means unchanged
+    #res[, dir1:=ifelse(dir==0, "0",
+    #            ifelse(med0>=0 & med1>=0, as.character(dir),
+    #            ifelse(med0<=0 & med1<=0, as.character(-dir),
+    #            ifelse(abs(med1)<abs(med0), "-1r", "1r"))))]
+  } else {
+    ub0 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model0, dir="max", mc.cores=nc))
+    lb0 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model0, dir="min", mc.cores=nc))
+    ub1 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model1, dir="max", mc.cores=nc))
+    lb1 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model1, dir="min", mc.cores=nc))
+    Rcplex.close()
+    m0 <- (ub0+lb0)/2
+    m1 <- (ub1+lb1)/2
+    ldm <- log2(abs(m1) / abs(m0))
+    res <- data.table(id=rxns, rxns=imat.model0$rxns[rxns],
+                      lb0=lb0, ub0=ub0, med0=m0,
+                      lb1=lb1, ub1=ub1, med1=m1,
+                      log.fc=ldm)
+    res <- res[order(-log.fc)]
+    # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
+    res[, dir:=ifelse(ub1>ub0 & lb1>lb0, 3,
+               ifelse(ub1<ub0 & lb1<lb0, -3,
+               ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
+               ifelse(ub1<ub0 & lb1==lb0 | ub1==ub0 & lb1<lb0, -2,     
+               ifelse(m1>m0, 1,
+               ifelse(m1<m0, -1, 0))))))]
+    # add summary of flux differences 1: positive value means increased absolute flux, vice versa; 0 means unchanged
+    #res[, dir1:=ifelse(dir==0, "0",
+    #            ifelse(med0>=0 & med1>=0, as.character(dir),
+    #            ifelse(med0<=0 & med1<=0, as.character(-dir),
+    #            ifelse(abs(med1)<abs(med0), "-1r", "1r"))))]
+  }
+  
+  res
 }
 
 
