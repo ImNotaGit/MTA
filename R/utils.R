@@ -83,6 +83,36 @@ get.rxn.equation <- function(vec, model) {
   })
 }
 
+get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default=TRUE, exclude.mets=NULL) {
+  # given the IDs of a set of rxns or mets (specified by type), return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn.
+  # if exclude.mets.default=TRUE, H+, OH- and H2O are excluded when determining the neighborhood
+  # exclude.mets are IDs other mets to be excluded
+  
+  library(igraph)
+  s <- model$S
+  if (exclude.mets.default) {
+    # by default, exclude h, oh1 and h2o in all cellular compartments; the regex below works for formats like "h[c]" and "h_c"
+    tmp <- grep("^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?", model$mets)
+    exclude.mets <- c(tmp, exclude.mets)
+    cat("The following metabolites are excluded:\n")
+    cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
+  }
+  s[exclude.mets, ] <- 0
+  # create bipartite graph between mets and rxns
+  gb <- graph.incidence(s)
+  if (type=="rxn") {
+    # project bipartite graph into the graph of rxns
+    gp <- bipartite.projection(gb, which="true")
+  } else if (type=="met") {
+    # project bipartite graph into the graph of mets
+    gp <- bipartite.projection(gb, which="false")
+  }
+  # get the neighborhood
+  res <- lapply(ego(gp, order=order, nodes=ids), as.vector)
+  names(res) <- ids
+  res
+}
+
 get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, nc=1L) {
   # get the max or min flux of the i'th reaction in the model
   # `i` can also be a vector of multiple reaction indices, with coef being their coefficients, then the corresponding linear objective function will be optimized
@@ -220,7 +250,7 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
     }
     res <- rbindlist(mclapply(rxns, function(i) dflux.test(imat.model0$sampl$pnts[i, sr0, drop=FALSE], imat.model1$sampl$pnts[i, sr1, drop=FALSE], lb, ub), mc.cores=nc))
     res[, padj:=p.adjust(pval, method="BH")]
-    res <- cbind(data.table(id=rxns, rxns=imat.model0$rxns[rxns]), res)
+    res <- cbind(data.table(id=rxns, rxn=imat.model0$rxns[rxns]), res)
     res <- res[order(padj, pval)]
     # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
     res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(norm.diff.med)>quantile(abs(norm.diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
@@ -238,7 +268,7 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
     ndm <- ifelse(m1>=m0, (m1-m0)/(ub-m0), (m1-m0)/(m0-lb))
-    res <- data.table(id=rxns, rxns=imat.model0$rxns[rxns],
+    res <- data.table(id=rxns, rxn=imat.model0$rxns[rxns],
                       lb0=lb0, ub0=ub0, med0=m0,
                       lb1=lb1, ub1=ub1, med1=m1,
                       norm.diff.med=ndm)
@@ -260,6 +290,74 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
   res
 }
 
+get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets.default=TRUE) {
+  # from the result of differential flux analysis with get.diff.flux, identify all the subnetworks (of >2 reactions) with a consistent direction of flux difference (i.e. all increase or all decrease).
+  # dflux.cutoff: used to determine the reactions with differential fluxes
+  # if exclude.mets.default=TRUE, H+, OH- and H2O are excluded
+  
+  library(igraph)
+  s <- model$S
+  if (exclude.mets.default) {
+    # by default, exclude h, oh1 and h2o in all cellular compartments; the regex below works for formats like "h[c]" and "h_c"
+    mets.rm <- grep("^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?", model$mets)
+    cat("The following metabolites are excluded:\n")
+    cat(paste(model$mets[mets.rm], collapse=", "), "\n")
+    s[mets.rm, ] <- 0
+  }
+  # create bipartite graph between mets and rxns
+  gb <- graph.incidence(s)
+  # project bipartite graph into the graph of rxns
+  gp <- bipartite.projection(gb, which="true")
+  V(gp)$name <- 1:length(V(gp)) # set vertex names to the rxn ids, since the induced_subgraph below will re-number the vertices and then the rxn ids will be lost
+  # for reactions with increased fluxes
+  df.rxns <- dflux.res[dir>=dflux.cutoff, id]
+  gp1 <- induced_subgraph(gp, df.rxns)
+  subn.pos <- groups(components(gp1))
+  subn.pos <- cbind(data.table(df.dir=1), rbindlist(lapply(subn.pos, function(x) data.table(size=length(x), rxn.ids=list(as.numeric(x))))))[size>1][order(-size)]
+  # for reactions with decreased fluxes
+  df.rxns <- dflux.res[-dir>=dflux.cutoff, id]
+  gp1 <- induced_subgraph(gp, df.rxns)
+  subn.neg <- groups(components(gp1))
+  subn.neg <- cbind(data.table(df.dir=-1), rbindlist(lapply(subn.neg, function(x) data.table(size=length(x), rxn.ids=list(as.numeric(x))))))[size>1][order(-size)]
+  # combine
+  subn <- rbind(subn.pos, subn.neg)
+  # add information on subsystems and metabolites
+  subn[, rxns:=lapply(rxn.ids, function(x) model$rxns[x])]
+  subn[, subsystems:=lapply(rxn.ids, function(x) unique(model$subSystems[x]))]
+  subn[, met.ids:=lapply(rxn.ids, function(x) which(rowSums(abs(s[,x,drop=FALSE]))!=0))]
+  subn[, mets:=lapply(met.ids, function(x) model$mets[x])]
+  subn
+}
+
+get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets.default=TRUE) {
+  # from the result of differential flux analysis with get.diff.flux, identify the flux differences of different directions (i.e. include both increase and decrease) associated with "branching point" metabolites (i.e. metabolites involved in >= 3 reactions): these cases reflect the metabolic flux diversion between two conditions.
+  # dflux.cutoff: used to determine the reactions with differential fluxes
+  # if exclude.mets.default=TRUE, H+, OH- and H2O are excluded
+  
+  df.rxns <- dflux.res[abs(dir)>=dflux.cutoff, id]
+  s <- model$S
+  s[s!=0] <- 1
+  # "branching point" metabolites associated with diff flux
+  div.mets <- which(rowSums(s)>=3 & rowSums(s[,df.rxns])!=0)
+  if (exclude.mets.default) {
+    # by default, exclude h, oh1 and h2o in all cellular compartments; the regex below works for formats like "h[c]" and "h_c"
+    tmp <- grep("^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?", model$mets)
+    cat("The following metabolites are excluded:\n")
+    cat(paste(model$mets[tmp], collapse=", "), "\n")
+    div.mets <- setdiff(div.mets, tmp)
+  }
+  names(div.mets) <- div.mets
+  
+  res <- rbindlist(lapply(div.mets, function(x) {
+    x.df.rxns <- df.rxns[s[x, df.rxns]!=0]
+    dflux.res[id %in% x.df.rxns, .(rxn.id=id, rxn, met.dir=sign(model$S[x,id]), df.dir=dir, subsystem=model$subSystems[id], equation=get.rxn.equation(id,model))][uniqueN(sign(df.dir))>1][order(-met.dir, -df.dir)]
+  }), idcol="met.id")
+  res[, met.id:=as.numeric(met.id)]
+  res[, met:=model$mets[met.id]]
+  setcolorder(res, c("met.id","met","rxn.id","rxn","met.dir","df.dir","subsystem","equation"))
+  res
+}
+
 subsystems2gsets <- function(model, name="subSystems") {
   # create a list of gene sets from the "subSystems" field of a metabolic model
   if (is.null(model[[name]])) stop("subSystems not in model.\n")
@@ -271,7 +369,10 @@ subsystems2gsets <- function(model, name="subSystems") {
 }
 
 pathway.gsea <- function(dflux.res, pathways=NULL, model=NULL, value.name="r", id.name="id") {
-  # metabolic pathway enrichment with gsea
+  # metabolic pathway enrichment with gsea, from the result of differential flux analysis with get.diff.flux
+  # if model is provided, will extract the subSystems from model and use them as gene sets
+  # value.name: the variable name in dflux.res for the measure of flux difference
+  # id.name: the variable name in dflux.res for the reaction id
   
   if (is.null(pathways)) {
     if (is.null(model$subSystems)) stop("pathway.enr: pathway annotations not provided and subSystems not in model.\n")
