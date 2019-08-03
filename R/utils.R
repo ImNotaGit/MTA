@@ -329,7 +329,7 @@ get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets=
   subn
 }
 
-get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?") {
+get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^co2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?") {
   # from the result of differential flux analysis with get.diff.flux, identify the flux differences of different directions (i.e. include both increase and decrease) associated with "branching point" metabolites (i.e. metabolites involved in >= 3 reactions): these cases reflect the metabolic flux diversion between two conditions.
   # dflux.cutoff: used to determine the reactions with differential fluxes
   # exclude.mets: regex of some high degree metabolites to be excluded; the regex works for mets formats like "h[c]" and "h_c"
