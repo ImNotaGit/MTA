@@ -83,20 +83,20 @@ get.rxn.equation <- function(vec, model) {
   })
 }
 
-get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default=TRUE, exclude.mets=NULL) {
+get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", exclude.mets=NULL) {
   # given the IDs of a set of rxns or mets (specified by type), return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn.
-  # if exclude.mets.default=TRUE, H+, OH- and H2O are excluded when determining the neighborhood
-  # exclude.mets are IDs other mets to be excluded
+  # if exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
+  # exclude.mets are IDs (indices) of other mets to be excluded
   
   library(igraph)
   s <- model$S
-  if (exclude.mets.default) {
-    # by default, exclude h, oh1 and h2o in all cellular compartments; the regex below works for formats like "h[c]" and "h_c"
-    tmp <- grep("^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?", model$mets)
-    exclude.mets <- c(tmp, exclude.mets)
-    cat("The following metabolites are excluded:\n")
-    cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
+  # exclude metabolites
+  if (!(is.null(exclude.mets.default) || exclude.mets.default=="")) {
+    emd <- grep(exclude.mets.default, model$mets)
+    exclude.mets <- c(emd, exclude.mets)
   }
+  cat("The following metabolites are excluded:\n")
+  cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
   s[exclude.mets, ] <- 0
   # create bipartite graph between mets and rxns
   gb <- graph.incidence(s)
@@ -290,19 +290,19 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
   res
 }
 
-get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets.default=TRUE) {
+get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?") {
   # from the result of differential flux analysis with get.diff.flux, identify all the subnetworks (of >2 reactions) with a consistent direction of flux difference (i.e. all increase or all decrease).
   # dflux.cutoff: used to determine the reactions with differential fluxes
-  # if exclude.mets.default=TRUE, H+, OH- and H2O are excluded
+  # exclude.mets: regex of some high degree metabolites to be excluded; the regex works for mets formats like "h[c]" and "h_c"
   
   library(igraph)
   s <- model$S
-  if (exclude.mets.default) {
-    # by default, exclude h, oh1 and h2o in all cellular compartments; the regex below works for formats like "h[c]" and "h_c"
-    mets.rm <- grep("^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?", model$mets)
+  # exclude metabolites
+  if (!(is.null(exclude.mets) || exclude.mets=="")) {
+    exclude.mets <- grep(exclude.mets, model$mets)
     cat("The following metabolites are excluded:\n")
-    cat(paste(model$mets[mets.rm], collapse=", "), "\n")
-    s[mets.rm, ] <- 0
+    cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
+    s[exclude.mets, ] <- 0
   }
   # create bipartite graph between mets and rxns
   gb <- graph.incidence(s)
@@ -329,22 +329,22 @@ get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets.
   subn
 }
 
-get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets.default=TRUE) {
+get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?") {
   # from the result of differential flux analysis with get.diff.flux, identify the flux differences of different directions (i.e. include both increase and decrease) associated with "branching point" metabolites (i.e. metabolites involved in >= 3 reactions): these cases reflect the metabolic flux diversion between two conditions.
   # dflux.cutoff: used to determine the reactions with differential fluxes
-  # if exclude.mets.default=TRUE, H+, OH- and H2O are excluded
+  # exclude.mets: regex of some high degree metabolites to be excluded; the regex works for mets formats like "h[c]" and "h_c"
   
   df.rxns <- dflux.res[abs(dir)>=dflux.cutoff, id]
   s <- model$S
   s[s!=0] <- 1
   # "branching point" metabolites associated with diff flux
   div.mets <- which(rowSums(s)>=3 & rowSums(s[,df.rxns])!=0)
-  if (exclude.mets.default) {
-    # by default, exclude h, oh1 and h2o in all cellular compartments; the regex below works for formats like "h[c]" and "h_c"
-    tmp <- grep("^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?", model$mets)
+  # exclude metabolites
+  if (!(is.null(exclude.mets) || exclude.mets=="")) {
+    exclude.mets <- grep(exclude.mets, model$mets)
     cat("The following metabolites are excluded:\n")
-    cat(paste(model$mets[tmp], collapse=", "), "\n")
-    div.mets <- setdiff(div.mets, tmp)
+    cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
+    div.mets <- setdiff(div.mets, exclude.mets)
   }
   names(div.mets) <- div.mets
   
