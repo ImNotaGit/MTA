@@ -83,17 +83,22 @@ get.rxn.equation <- function(vec, model) {
   })
 }
 
-get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", exclude.mets=NULL) {
+get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", exclude.mets.degree=70, exclude.mets=NULL) {
   # given the IDs of a set of rxns or mets (specified by type), return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn.
-  # if exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
+  # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
+  # exclude.mets.degree: exclude metabolites with degree greater than this
   # exclude.mets are IDs (indices) of other mets to be excluded
   
   library(igraph)
   s <- model$S
   # exclude metabolites
+  tmp <- graph.incidence(s)
+  tmp <- bipartite.projection(tmp, which="false") # projected network of metabolites
+  deg <- igraph::degree(tmp) # make sure use degree from igraph
+  exclude.mets <- c(exclude.mets, which(deg>exclude.mets.degree))
   if (!(is.null(exclude.mets.default) || exclude.mets.default=="")) {
     emd <- grep(exclude.mets.default, model$mets)
-    exclude.mets <- c(emd, exclude.mets)
+    exclude.mets <- unique(c(exclude.mets, emd))
   }
   cat("The following metabolites are excluded:\n")
   cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
