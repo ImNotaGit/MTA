@@ -72,6 +72,20 @@ genes2rxns <- function(genes, type=0, model) {
   res
 }
 
+rxns2mets <- function(vec, model) {
+  # given a vector of reaction indices, map each of them to metabolite indices
+  res <- apply(model$S[, vec], 2, function(x) which(x!=0))
+  names(res) <- vec
+  res
+}
+
+mets2rxns <- function(vec, model) {
+  # given a vector of metabolite indices, map each of them to reaction indices
+  res <- apply(model$S[vec, ], 1, function(x) which(x!=0))
+  names(res) <- vec
+  res
+}
+
 get.rxn.equation <- function(vec, model) {
   # given a numerical vector corresponding to the reaction indeces in the model, return string vector containing the equations of the corresponding reactions
   sapply(vec, function(i) {
@@ -83,7 +97,7 @@ get.rxn.equation <- function(vec, model) {
   })
 }
 
-get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", exclude.mets.degree=70, exclude.mets=NULL) {
+get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
   # given the IDs of a set of rxns or mets (specified by type), return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn.
   # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
   # exclude.mets.degree: exclude metabolites with degree greater than this
@@ -295,6 +309,74 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
   res
 }
 
+get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, sample.range=NULL, mets="all", nc=1L, padj.cutoff=0.01, r.cutoff=0.1, diff.med.cutoff=0.1) {
+    # do differential flux analysis for the flux through each metabolite (i.e. either the production or consumption, they should be the same in magnitude if S*v=0; below I am using the production flux): imat.model1 compared to imat.model0
+    # if use.sample, use the sampled flux distributions saved in the imat.models, by default, use 1001:end sample points; or specify range of sample points for model0 and model1 respectively in a list
+    # is use.sample==FALSE, then deterimine diff flux by obtaining the min and max fluxes through each metabolite for the two models, and regard metabolites with either increased lb or increased ub as upregulated and vice versa; ambiguous cases (e.g. lowered lb and increased ub) are regarded as non-differential
+    # by default, mets="all" means performing the analysis across all metabolites; or specify metabolite indices; nc is the number of cores for paralleling across the metabolites
+    # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed metabolites when use.sample==TRUE
+  if (mets=="all") mets <- 1:length(imat.model0$mets)
+  if (use.sample) {
+    if (is.null(sample.range)) {
+      sr0 <- 1001:ncol(imat.model0$sampl$pnts)
+      sr1 <- 1001:ncol(imat.model1$sampl$pnts)
+    } else {
+      sr0 <- sample.range[[1]]
+      sr1 <- sample.range[[2]]
+    }
+    samp0 <- apply(imat.model0$S[mets,], 1, function(x) colSums(x[x>0]*imat.model0$sampl$pnts[x>0,,drop=FALSE]))
+    samp1 <- apply(imat.model1$S[mets,], 1, function(x) colSums(x[x>0]*imat.model1$sampl$pnts[x>0,,drop=FALSE]))
+    dflux.test <- function(s0, s1) {
+      # run wilcox test
+      tryCatch({
+        wilcox.res <- wilcox.test(s0, s1)
+        # p value
+        wilcox.p <- wilcox.res$p.value
+        # effect size for unpaired test: rank biserial correlation
+        wilcox.r <- unname(1 - 2 * wilcox.res$statistic / (length(s0)*length(s1)))
+        # another effect size measure: difference of median fluxes
+        m0 <- median(s0)
+        m1 <- median(s1)
+        dm <- m1-m0
+        data.table(lb0=min(s0), ub0=max(s0), med0=m0,
+                   lb1=min(s1), ub1=max(s1), med1=m1,
+                   diff.med=dm, r=wilcox.r, pval=wilcox.p)
+      }, error=function(e) {
+        data.table(lb0=NA, ub0=NA, med0=NA, lb1=NA, ub1=NA, med1=NA, diff.med=NA, r=NA, pval=NA)
+      })
+    }
+    res <- rbindlist(mclapply(1:length(mets), function(i) dflux.test(samp0[sr0,i,drop=FALSE], samp1[sr1,i,drop=FALSE]), mc.cores=nc))
+    res[, padj:=p.adjust(pval, method="BH")]
+    res <- cbind(data.table(id=mets, met=imat.model0$mets[mets]), res)
+    res <- res[order(padj, pval)]
+    # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
+    res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(diff.med)>quantile(abs(diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
+  } else {
+    ids <- apply(imat.model0$S[mets,], 1, function(x) which(x>0))
+    coefs <- apply(imat.model0$S[mets,], 1, function(x) x[x>0])
+    ub0 <- unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc))
+    lb0 <- unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc))
+    ub1 <- unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc))
+    lb1 <- unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc))
+    Rcplex.close()
+    m0 <- (ub0+lb0)/2
+    m1 <- (ub1+lb1)/2
+    dm <- m1-m0
+    res <- data.table(id=rxns, rxn=imat.model0$rxns[rxns],
+                      lb0=lb0, ub0=ub0, med0=m0,
+                      lb1=lb1, ub1=ub1, med1=m1,
+                      diff.med=dm)
+    res <- res[order(-abs(diff.med))]
+    # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
+    res[, dir:=ifelse(ub1>ub0 & lb1>lb0, 3,
+               ifelse(ub1<ub0 & lb1<lb0, -3,
+               ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
+               ifelse(ub1<ub0 & lb1==lb0 | ub1==ub0 & lb1<lb0, -2,     
+               ifelse(m1>m0, 1,
+               ifelse(m1<m0, -1, 0))))))]
+  }
+}
+
 get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?") {
   # from the result of differential flux analysis with get.diff.flux, identify all the subnetworks (of >2 reactions) with a consistent direction of flux difference (i.e. all increase or all decrease).
   # dflux.cutoff: used to determine the reactions with differential fluxes
@@ -396,7 +478,7 @@ library(hypergraph)
 library(hyperdraw)
 library(RColorBrewer)
 
-plot.model <- function(model, rxn.ids=1:length(model$rxns), fluxes=rep(1, length(rxns)), dfluxes=rep(0, length(rxns)), met.ids=1:length(model$mets), mets.dup=c(), layout="dot", mode=0, lwd.rng=c(0.5,10), cols=c("green4","grey","red3"), plt.margins=c(150,150,150,150)) {
+plot.model <- function(model, rxn.ids=1:length(model$rxns), fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0, length(rxn.ids)), met.ids=1:length(model$mets), mets.dup=NULL, layout="dot", mode=0, lwd.rng=c(0.5,10), cols=c("green4","grey","red3"), plt.margins=c(150,150,150,150)) {
   # model: the base metabolic model
   # rxn.ids: IDs of the reactions to plot
   # fluxes and dfluxes: the reference fluxes and flux changes of the reactions in rxn.ids
