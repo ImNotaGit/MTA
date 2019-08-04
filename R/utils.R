@@ -375,6 +375,19 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
   }
 }
 
+check.diff.flux.of.met <- function(dflux.res, met.ids, model) {
+  # given dflux.res and a set of metabolite indices in met.ids, for each metabolite get the diff.flux result of the reactions associated with it
+  names(met.ids) <- model$mets[met.ids]
+  lapply(met.ids, function(i) {
+    tmp <- sign(model$S[i,])
+    rxn.ids <- which(tmp!=0)
+    dirs <- tmp[rxn.ids]
+    tmp <- dflux.res[match(rxn.ids, id), .(diff.med=med1-med0, dir)]
+    res <- cbind(data.table(met=model$mets[i], rxn.id=rxn.ids, met.dir=dirs), tmp, data.table(subsystem=model$subSystems[rxn.ids], equation=get.rxn.equation(rxn.ids,model)))
+    res[order(-met.dir, -diff.med)]
+  })
+}
+
 get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?") {
   # from the result of differential flux analysis with get.diff.flux, identify all the subnetworks (of >2 reactions) with a consistent direction of flux difference (i.e. all increase or all decrease).
   # dflux.cutoff: used to determine the reactions with differential fluxes
