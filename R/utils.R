@@ -72,14 +72,14 @@ genes2rxns <- function(genes, type=0, model) {
 
 rxns2mets <- function(vec, model) {
   # given a vector of reaction indices, map each of them to metabolite indices
-  res <- apply(model$S[, vec], 2, function(x) which(x!=0))
+  res <- apply(model$S[,vec,drop=FALSE], 2, function(x) which(x!=0))
   names(res) <- vec
   res
 }
 
 mets2rxns <- function(vec, model) {
   # given a vector of metabolite indices, map each of them to reaction indices
-  res <- apply(model$S[vec, ], 1, function(x) which(x!=0))
+  res <- apply(model$S[vec,,drop=FALSE], 1, function(x) which(x!=0))
   names(res) <- vec
   res
 }
