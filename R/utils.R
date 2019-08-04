@@ -2,11 +2,10 @@ library(data.table)
 library(Matrix)
 library(stringr)
 library(parallel)
+library(Rcplex.my)
 
 
 #### ---- metabolic model utils ----
-
-library(Rcplex.my)
 
 exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
   # map a vector of expression values either meant to be levels or direction of changes of genes to those of the reactions in the metabolic model
@@ -323,8 +322,8 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
       sr0 <- sample.range[[1]]
       sr1 <- sample.range[[2]]
     }
-    samp0 <- apply(imat.model0$S[mets,], 1, function(x) colSums(x[x>0]*imat.model0$sampl$pnts[x>0,,drop=FALSE]))
-    samp1 <- apply(imat.model1$S[mets,], 1, function(x) colSums(x[x>0]*imat.model1$sampl$pnts[x>0,,drop=FALSE]))
+    samp0 <- apply(imat.model0$S[mets,], 1, function(x) Matrix::colSums(x[x>0]*imat.model0$sampl$pnts[x>0,,drop=FALSE]))
+    samp1 <- apply(imat.model1$S[mets,], 1, function(x) Matrix::colSums(x[x>0]*imat.model1$sampl$pnts[x>0,,drop=FALSE]))
     dflux.test <- function(s0, s1) {
       # run wilcox test
       tryCatch({
@@ -410,7 +409,7 @@ get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets=
   # add information on subsystems and metabolites
   subn[, rxns:=lapply(rxn.ids, function(x) model$rxns[x])]
   subn[, subsystems:=lapply(rxn.ids, function(x) unique(model$subSystems[x]))]
-  subn[, met.ids:=lapply(rxn.ids, function(x) which(rowSums(abs(s[,x,drop=FALSE]))!=0))]
+  subn[, met.ids:=lapply(rxn.ids, function(x) which(Matrix::rowSums(abs(s[,x,drop=FALSE]))!=0))]
   subn[, mets:=lapply(met.ids, function(x) model$mets[x])]
   subn
 }
@@ -424,7 +423,7 @@ get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^
   s <- model$S
   s[s!=0] <- 1
   # "branching point" metabolites associated with diff flux
-  div.mets <- which(rowSums(s)>=3 & rowSums(s[,df.rxns,drop=FALSE])!=0)
+  div.mets <- which(Matrix::rowSums(s)>=3 & Matrix::rowSums(s[,df.rxns,drop=FALSE])!=0)
   # exclude metabolites
   if (!(is.null(exclude.mets) || exclude.mets=="")) {
     exclude.mets <- grep(exclude.mets, model$mets)
