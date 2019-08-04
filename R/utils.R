@@ -2,7 +2,6 @@ library(data.table)
 library(Matrix)
 library(stringr)
 library(parallel)
-library(fgsea)
 
 
 #### ---- metabolic model utils ----
@@ -425,7 +424,7 @@ get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^
   s <- model$S
   s[s!=0] <- 1
   # "branching point" metabolites associated with diff flux
-  div.mets <- which(rowSums(s)>=3 & rowSums(s[,df.rxns])!=0)
+  div.mets <- which(rowSums(s)>=3 & rowSums(s[,df.rxns,drop=FALSE])!=0)
   # exclude metabolites
   if (!(is.null(exclude.mets) || exclude.mets=="")) {
     exclude.mets <- grep(exclude.mets, model$mets)
@@ -460,7 +459,7 @@ pathway.gsea <- function(dflux.res, pathways=NULL, model=NULL, value.name="r", i
   # if model is provided, will extract the subSystems from model and use them as gene sets
   # value.name: the variable name in dflux.res for the measure of flux difference
   # id.name: the variable name in dflux.res for the reaction id
-  
+  library(fgsea)
   if (is.null(pathways)) {
     if (is.null(model$subSystems)) stop("pathway.enr: pathway annotations not provided and subSystems not in model.\n")
     pathways <- subsystems2gsets(model=model)
