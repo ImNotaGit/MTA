@@ -31,6 +31,7 @@ rxnNames <- tmpf("rxnNames")
 subsys <- tmpf("subSystems")
 lb <- c(recon1$lb, recon1$lb[not.erxn.ids])
 ub <- c(recon1$ub, recon1$ub[not.erxn.ids])
+cvec <- c(recon1$c, recon1$c[not.erxn.ids]) # the default cvec (objective function coefficient)
 
 # 2. metabolites
 # concatenate: (a) the current metabolites with (b) an extra set of metabolites for those in the second cell; the imet.ids part of (a) is used to represent those in the first cell, and this part is simply duplicated to obtain (b); the emet.ids part of (a) is common to both cells
@@ -41,6 +42,8 @@ rowlb <- c(recon1$rowlb, recon1$rowlb[imet.ids])
 rowlb[emet.ids] <- 2*rowlb[emet.ids] # x2 since these are produced/consumed by both cells
 rowub <- c(recon1$rowub, recon1$rowub[imet.ids])
 rowub[emet.ids] <- 2*rowub[emet.ids] # x2 since these are produced/consumed by both cells
+b <- c(recon1$b, recon1$b[imet.ids])
+b[emet.ids] <- 2*b[emet.ids] # x2 since these are produced/consumed by both cells
 
 # 3. S matrix
 # the order of reactions is as above; for the (a) part, the matrix is just the original S unchanged but added more rows of zeros for the intracellular metabolites of the second cell; for the (b) part, the matrix is based on the not.erxn.ids columns of the original S matrix just with the rows corresponding to imet.ids "cut and pasted" to bottom
@@ -74,7 +77,7 @@ tmp <- str_replace_all(rules[dupg.rxn.ids], "[0-9]+", function(x) {
 rules[dupg.rxn.ids] <- paste0("(",rules[dupg.rxn.ids],") | (",tmp,")")
 
 # resulting model
-recon1x2 <- list(rxns=rxns, rxnNames=rxnNames, subSystems=subsys, mets=mets, metNames=metNames, metFormulas=metFor, lb=lb, ub=ub, rowlb=rowlb, rowub=rowub, S=S, genes=genes, gene.ids=gene.ids, rules=rules)
+recon1x2 <- list(description="Recon 1 Bicellular", rxns=rxns, rxnNames=rxnNames, subSystems=subsys, mets=mets, metNames=metNames, metFormulas=metFor, lb=lb, ub=ub, c=cvec, rowlb=rowlb, rowub=rowub, b=b, S=S, genes=genes, gene.ids=gene.ids, rules=rules)
 
 save(recon1x2, file="Recon1x2.RData")
 
