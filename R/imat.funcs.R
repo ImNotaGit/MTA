@@ -105,8 +105,8 @@ form.imat <- function(model, expr, params) {
 
   # other parameters
   n <- n.act + n.act.rev + n.inact + n.inact.rev
-  rowlb <- c(model$b, rep(-params$flux.bound, n))
-  rowub <- c(model$b, rep(params$flux.bound, n))
+  rowlb <- c(model$rowlb, rep(-params$flux.bound, n)) # originally, it was c(model$b, ...)
+  rowub <- c(model$rowub, rep(params$flux.bound, n)) # originally, it was c(model$b, ...)
   n <- ncol(S) - n.rxns
   c <- rep(c(0,1), c(n.rxns, n))
   vtype <- ifelse(c==1, "I", "C")
