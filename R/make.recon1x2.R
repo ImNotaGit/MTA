@@ -29,6 +29,7 @@ tmpf <- function(a, b="not.erxn.ids") {
 rxns <- tmpf("rxns")
 rxnNames <- tmpf("rxnNames")
 subsys <- tmpf("subSystems")
+subsys[subsys %in% c("NA_cell1","NA_cell2")] <- NA
 lb <- c(recon1$lb, recon1$lb[not.erxn.ids])
 ub <- c(recon1$ub, recon1$ub[not.erxn.ids])
 cvec <- c(recon1$c, recon1$c[not.erxn.ids]) # the default cvec (objective function coefficient)
