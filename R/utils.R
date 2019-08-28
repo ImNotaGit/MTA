@@ -72,14 +72,14 @@ genes2rxns <- function(genes, type=0, model) {
 
 rxns2mets <- function(vec, model) {
   # given a vector of reaction indices, map each of them to metabolite indices
-  res <- apply(model$S[,vec,drop=FALSE], 2, function(x) which(x!=0))
+  res <- lapply(vec, function(i) which(model$S[,i]!=0))
   names(res) <- vec
   res
 }
 
 mets2rxns <- function(vec, model) {
   # given a vector of metabolite indices, map each of them to reaction indices
-  res <- apply(model$S[vec,,drop=FALSE], 1, function(x) which(x!=0))
+  res <- lapply(vec, function(i) which(model$S[i,]!=0))
   names(res) <- vec
   res
 }
@@ -268,7 +268,7 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
     res <- rbindlist(mclapply(rxns, function(i) dflux.test(imat.model0$sampl$pnts[i, sr0, drop=FALSE], imat.model1$sampl$pnts[i, sr1, drop=FALSE], lb, ub), mc.cores=nc))
     res[, padj:=p.adjust(pval, method="BH")]
     res <- cbind(data.table(id=rxns, rxn=imat.model0$rxns[rxns]), res)
-    res <- res[order(padj, pval)]
+    res <- res[order(padj, pval, -abs(r), -abs(norm.diff.med))]
     # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
     res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(norm.diff.med)>quantile(abs(norm.diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
     # add summary of flux differences 1: positive value means increased absolute flux, vice versa; 0 means unchanged
@@ -305,6 +305,20 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
   }
   
   res
+}
+
+get.diff.flux.x2 <- function(imat.model, c0="cell2", c1="cell1", use.sample=TRUE, sample.range=NULL, nc=1L, padj.cutoff=0.01, r.cutoff=0.1, diff.med.cutoff=0.1) {
+  # diff.flux for bicellular model, between the two cells, i.e. c1 (_cell1) vs c0 (_cell2)
+  # will just re-use get.diff.flux; but perform analysis always for all reactions that are not exlusively in the extracellular space
+  # in the result, reaction id correspond to those in the single cellular model
+  r0 <- grep(c0, imat.model$rxns)
+  r1 <- grep(c1, imat.model$rxns)
+  if (c1=="cell1") rxn.ids <- r1 else rxn.ids <- r0
+  rxns <- stringr::str_sub(imat.model$rxns[rxn.ids],1,-7)
+  im0 <- list(rxns=rxns, lb=imat.model$lb[r0], ub=imat.model$ub[r0], sampl=list(pnts=imat.model$sampl$pnts[r0,]))
+  im1 <- list(rxns=rxns, lb=imat.model$lb[r1], ub=imat.model$ub[r1], sampl=list(pnts=imat.model$sampl$pnts[r1,]))
+  res <- get.diff.flux(im0, im1, use.sample, sample.range, rxns="all", nc, padj.cutoff, r.cutoff, diff.med.cutoff)
+  res[, id:=rxn.ids[id]]
 }
 
 get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, sample.range=NULL, mets="all", nc=1L, padj.cutoff=0.01, r.cutoff=0.1, diff.med.cutoff=0.1) {
@@ -346,7 +360,7 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
     res <- rbindlist(mclapply(1:length(mets), function(i) dflux.test(samp0[sr0,i,drop=FALSE], samp1[sr1,i,drop=FALSE]), mc.cores=nc))
     res[, padj:=p.adjust(pval, method="BH")]
     res <- cbind(data.table(id=mets, met=imat.model0$mets[mets]), res)
-    res <- res[order(padj, pval)]
+    res <- res[order(padj, pval, -abs(r), -abs(diff.med))]
     # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
     res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(diff.med)>quantile(abs(diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
   } else {
@@ -360,7 +374,7 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
     dm <- m1-m0
-    res <- data.table(id=rxns, rxn=imat.model0$rxns[rxns],
+    res <- data.table(id=mets, rxn=imat.model0$mets[mets],
                       lb0=lb0, ub0=ub0, med0=m0,
                       lb1=lb1, ub1=ub1, med1=m1,
                       diff.med=dm)
@@ -373,6 +387,20 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
                ifelse(m1>m0, 1,
                ifelse(m1<m0, -1, 0))))))]
   }
+}
+
+get.diff.flux.by.met.x2 <- function(imat.model, c0="cell2", c1="cell1", use.sample=TRUE, sample.range=NULL, nc=1L, padj.cutoff=0.01, r.cutoff=0.1, diff.med.cutoff=0.1) {
+  # diff.flux.by.met for bicellular model, between the two cells, i.e. c1 (_cell1) vs c0 (_cell2)
+  # will just re-use get.diff.flux.by.met; but perform analysis always for all intracellular metabolites
+  # in the result, metabolite id correspond to those in the single cellular model
+  m0 <- grep(c0, imat.model$mets)
+  m1 <- grep(c1, imat.model$mets)
+  if (c1=="cell1") met.ids <- m1 else met.ids <- m0
+  mets <- stringr::str_sub(imat.model$mets[met.ids],1,-7)
+  im0 <- list(mets=mets, S=imat.model$S[m0,], sampl=list(pnts=imat.model$sampl$pnts))
+  im1 <- list(mets=mets, S=imat.model$S[m1,], sampl=list(pnts=imat.model$sampl$pnts))
+  res <- get.diff.flux.by.met(im0, im1, use.sample, sample.range, mets="all", nc, padj.cutoff, r.cutoff, diff.med.cutoff)
+  res[, id:=met.ids[id]]
 }
 
 check.diff.flux.of.met <- function(dflux.res, met.ids, model) {
@@ -456,26 +484,37 @@ get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^
   res
 }
 
-subsystems2gsets <- function(model, name="subSystems") {
-  # create a list of gene sets from the "subSystems" field of a metabolic model
+subsystems2gsets <- function(model, by=c("rxn","met"), exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", exclude.mets.degree=nrow(model$S), name="subSystems") {
+  # create a list of reaction or metabolite ("by") sets from the "subSystems" field of a metabolic model
+  # if by metabolite, exclude.mets are the regex of high-degree mets to exclude, also can set degree cutoff with exclude.mets.degree (metabolites with degree higher than this will be excluded); the union of these two will be excluded
+  by <- match.arg(by)
   if (is.null(model[[name]])) stop("subSystems not in model.\n")
   tmp <- data.table(path=model$subSystems, rxn.id=as.character(1:length(model$subSystems)))
   tmp <- tmp[!is.na(path), .(rxn.id=list(rxn.id)), by=path]
   gsets <- tmp$rxn.id
   names(gsets) <- tmp$path
-  gsets
+  if (by=="rxn") return(gsets)
+  # if by reaction, exclude metabolites
+  library(igraph)
+  tmp <- graph.incidence(model$S)
+  tmp <- bipartite.projection(tmp, which="false") # projected network of metabolites
+  deg <- igraph::degree(tmp) # make sure use degree from igraph
+  mets.rm <- unique(c(grep(exclude.mets, model$mets), which(deg>exclude.mets.degree)))
+  cat("The following metabolites are excluded:\n")
+  cat(paste(model$mets[mets.rm], collapse=", "), "\n")
+  
+  gsets <- lapply(gsets, function(x) {
+    mets <- rxns2mets(as.integer(x), model)
+    mets <- unique(unlist(mets))
+    as.character(setdiff(mets, mets.rm))
+  })
 }
 
-pathway.gsea <- function(dflux.res, pathways=NULL, model=NULL, value.name="r", id.name="id") {
-  # metabolic pathway enrichment with gsea, from the result of differential flux analysis with get.diff.flux
-  # if model is provided, will extract the subSystems from model and use them as gene sets
+pathway.gsea <- function(dflux.res, pathways, value.name="r", id.name="id") {
+  # metabolic pathway enrichment with gsea, from the result of differential flux analysis with get.diff.flux or get.diff.flux.by.met
   # value.name: the variable name in dflux.res for the measure of flux difference
-  # id.name: the variable name in dflux.res for the reaction id
+  # id.name: the variable name in dflux.res for the reaction/metabolite id
   library(fgsea)
-  if (is.null(pathways)) {
-    if (is.null(model$subSystems)) stop("pathway.enr: pathway annotations not provided and subSystems not in model.\n")
-    pathways <- subsystems2gsets(model=model)
-  }
   vec <- dflux.res[[value.name]]
   names(vec) <- dflux.res[[id.name]]
   res <- fgsea(pathways, vec, nperm=1e4)
@@ -485,110 +524,178 @@ pathway.gsea <- function(dflux.res, pathways=NULL, model=NULL, value.name="r", i
 
 #### ---- visualization ----
 
-library(hypergraph)
-library(hyperdraw)
-library(RColorBrewer)
-
-plot.model <- function(model, rxn.ids=1:length(model$rxns), fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0, length(rxn.ids)), met.ids=1:length(model$mets), mets.dup=NULL, layout="dot", mode=0, lwd.rng=c(0.5,10), cols=c("green4","grey","red3"), plt.margins=c(150,150,150,150)) {
+plot.model <- function(model, rxn.ids, fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0, length(rxn.ids)), met.ids=1:length(model$mets), exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", dup.mets=exclude.mets, use.flux=c("dflux","flux"), use=c("both","color","width"), cols=c("green4","grey","red3"), sizes=c(0.5,5), layout=c("neato","fdp","dot","circo","twopi"), margins=c(150,150,150,150)) {
   # model: the base metabolic model
   # rxn.ids: IDs of the reactions to plot
-  # fluxes and dfluxes: the reference fluxes and flux changes of the reactions in rxn.ids
-  # met.ids: IDs of the metabolites to plot
-  # mets.dup: names of metabolites (as in model$mets) to be plot as separate nodes for each reaction, when they are recurrent in multiple reactions
-  # layout
-  # mode 0: line width represents dfluxes, line color represents the direction of dfluxes; mode 1: line width represents fluxes, and line color represents dfluxes
-  # lwd.rng: range of line widths to use
-  # cols: color values for decreased, unchanged, and increased fluxes (decrease/increase in terms of absolute value)
-  # plt.margins: plot margins on the up, bottome, left, and right
+  # fluxes: the flux values corresponding to the reactions in rxn.ids
+  # dfluxes: the values of flux changes corresponding to the reactions in rxn.ids
+  # met.ids: IDs of the metabolites to include in the plot
+  # exclude.mets: regex for names of metabolites (as in model$mets) to be excluded from the plots; the default regex works for some of the high-degree mets in recon1 and iMM1415
+  # dup.mets: after keeping the mets in mets.ids and excluding those in exclude.mets, for the remaining mets, use dup.mets to specify regex of mets to be plot as separate nodes for each reaction, when they are recurrent in multiple reactions; the default is the same as exclude.mets, so these will be excluded; to duplicate these instead of removing them, set exclude.mets to NULL
+  # use.flux: choose to plot fluxes or dfluxes
+  # use: use line color, or line width, or both to represent the flux or dflux values
+  # cols: a vector of length 3, colors for decreased, unchanged, and increased reactions respectively if plotting dfluxes; if plotting fluxes, the 2nd and 3rd colors will be used for low and high fluxes respectively; if not using colors, the 2nd color will be used for all reactions
+  # sizes: a vector of length 2, range of line widths
+  # layout: graph layout for hyperdraw::graphLayout
+  # margins: plot margins on the up, bottom, left, and right
+  library(hypergraph)
+  library(hyperdraw)
+  library(RColorBrewer)
   
+  use.flux <- match.arg(use.flux)
+  use <- match.arg(use)
+  layout <- match.arg(layout)
+
   # build hyperedges from rxns
   rxns <- model$rxns[rxn.ids]
+  met.ids <- setdiff(met.ids, grep(exclude.mets, model$mets))
   mets <- model$mets[met.ids]
-  hyperedges <- lapply(1:length(rxn.ids), function(i) {
-    rxn.id <- rxn.ids[i]
-    rxn <- rxns[i]
-    flux <- fluxes[i]
-    x <- model$S[met.ids, rxn.id]
-    reactants <- mets[x<0]
-    mdup <- reactants %in% mets.dup
-    reactants[mdup] <- paste0(reactants[mdup], i)
-    products <- mets[x>0]
-    mdup <- products %in% mets.dup
-    products[mdup] <- paste0(products[mdup], i)
-    if (flux>=0) {
-      res <- DirectedHyperedge(reactants, products, label=rxn)
-    } else {
-      res <- DirectedHyperedge(products, reactants, label=rxn)
-    }
+  md.ids <- intersect(met.ids, grep(dup.mets, model$mets))
+  hypeds <- lapply(1:length(rxn.ids), function(i) {
+    x <- model$S[met.ids, rxn.ids[i]]
+    mi <- x!=0
+    mets.i <- ifelse(met.ids[mi] %in% md.ids, paste0(mets[mi],i), mets[mi])
+    rs <- mets.i[x[mi]<0] # reactants
+    ps <- mets.i[x[mi]>0] # products
+    if (length(rs)==0) rs <- paste0("EX_",ps)
+    if (length(ps)==0) ps <- paste0("EX_",rs)
+    # by default, create a hyperedge for a reaction, with arrows pointing from reactants to products:
+    res <- DirectedHyperedge(rs, ps, label=rxns[i])
+    # when plotting flux, if a reversible reaction is going backwards (i.e. flux<0), draw the arrow in the corresponding direction:
+    if (use.flux=="flux" && fluxes[i]<0) res <- DirectedHyperedge(ps, rs, label=rxns[i])
+    # when plotting dflux, (only) for the reversible reactions, draw the direction of the arrow according to the direction of dflux (also note: when using color, these will always be plotted in red or the color representing increase):
+    if (use.flux=="dflux" && model$lb[rxn.ids][i]<0 && dfluxes[i]<0) res <- DirectedHyperedge(ps, rs, label=rxns[i])
     res
   })
-  
+  hypeds <- hypeds[!sapply(hypeds, is.null)]
+  # now arrows for reversible reactions have been sorted out, we update flux and dflux values for plotting
+  fluxes <- abs(fluxes)
+  dfluxes[model$lb[rxn.ids]<0] <- abs(dfluxes[model$lb[rxn.ids]<0])
+
+  # if plotting flux:
+  if (use.flux=="flux") {
+    v <- fluxes
+    # trimming large flux values to facilitate plotting
+    v0 <- median(v) + 2*mad(v)
+    v[v>v0] <- v0
+    # line colors:
+    if (use %in% c("color","both")) {
+      nc <- uniqueN(c(0,v))
+      if (nc==1) {
+        cols <- rep(cols[2],length(v))
+      } else {
+        cols <- colorRampPalette(cols[c(2,3)])(nc)
+        bid <- as.numeric(cut(c(0,v), nc))
+        cols <- cols[bid[-1]]
+      }
+    } else cols <- rep(cols[2],length(v))
+    # line widths:
+    if (use %in% c("width","both")) lwds <- v / (max(v)-min(v)) * diff(sizes) - min(v) + sizes[1] else lwds <- rep(2,length(v))
+  }
+  # if plotting dflux:
+  if (use.flux=="dflux") {
+    v <- dfluxes
+    # if dfluxes values do not range from -1 and 1, trimm large positive and negative dflux values to facilitate plotting
+    if (any(v>1) || any(v< -1)) {
+      v0 <- median(v[v>0]) + 2*mad(v[v>0])
+      v[v>v0] <- v0
+      v0 <- median(v[v<0]) - 2*mad(v[v<0])
+      v[v<v0] <- v0
+    }
+    # line colors:
+    if (use %in% c("color","both")) {
+      unqv <- unique(c(0,v))
+      nc1 <- sum(unqv>=0)
+      nc2 <- sum(unqv<=0)
+      idx1 <- v>=0
+      idx2 <- v<0
+      if (nc1==1) {
+        c1 <- rep(cols[2], sum(idx1))
+      } else {
+        c1 <- colorRampPalette(cols[2:3])(nc1)
+        bid <- as.numeric(cut(c(0,v[idx1]), nc1))
+        c1 <- c1[bid[-1]]
+      }
+      if (nc2==1) {
+        c2 <- rep(cols[2], sum(idx2))
+      } else {
+        c2 <- colorRampPalette(cols[1:2])(nc2)
+        bid <- as.numeric(cut(c(0,v[idx2]), nc2))
+        c2 <- c2[bid[-1]]
+      }
+      cols <- c()
+      cols[idx1] <- c1
+      cols[idx2] <- c2
+    } else cols <- rep(cols[2],length(v))
+    # line widths:
+    if (use %in% c("width","both")) {
+      v <- abs(v)
+      lwds <- v / (max(v)-min(v)) * diff(sizes) - min(v) + sizes[1]
+    } else lwds <- rep(2,length(v))
+  }
+
   # build graph object
-  node.names <- unique(unlist(lapply(hyperedges, function(x) c(x@head, x@tail))))
-  hg <- Hypergraph(node.names, hyperedges)
+  node.names <- unique(unlist(lapply(hypeds, function(x) c(x@head, x@tail))))
+  hg <- Hypergraph(node.names, hypeds)
   testbph <- graphBPH(hg)
   my.graph <- graphLayout(testbph, layoutType=layout)
-  
+  # various plot parameters
   nodeDataDefaults(my.graph, "shape") <- "box"
   nodeDataDefaults(my.graph, "margin") <- 'unit(3, "mm")'  
-  edgeDataDefaults(my.graph, "lwd") <- 1
+  edgeDataDefaults(my.graph, "lwd") <- 2
   graphDataDefaults(my.graph, "arrowLoc") <- "end"
-  
-  df <- ifelse(sign(fluxes)*sign(dfluxes)>=0, abs(dfluxes), -abs(dfluxes)) / abs(fluxes)
-  df[is.nan(df)] <- 0
-  df.med <- median(df)
-  df.3mad <- 3*median(abs(df-df.med))
-  df.ub <- df.med+df.3mad
-  df.lb <- df.med-df.3mad
-  df[df>df.ub] <- df.ub
-  df[df<df.lb] <- df.lb
-  if (mode==0) {
-    # line widths represents dfluxes, line color means the direction of dfluxes
-    ## line widths
-    lwds <- abs(df) / median(abs(df)) * (lwd.rng[1]+lwd.rng[2])/2
-    lwds[is.nan(lwds)] <- (lwd.rng[1]+lwd.rng[2])/2
-    lwds[lwds<lwd.rng[1]] <- lwd.rng[1]
-    lwds[lwds>lwd.rng[2]] <- lwd.rng[2]
-    ## line colors
-    cols <- ifelse(df>0, cols[3], ifelse(df<0, cols[1], cols[2]))
-  } else if (mode==1) {
-    # line widths means fluxes, and line colors means dfluxes
-    ## line widths
-    lwds <- abs(fluxes) / max(abs(fluxes)) * lwd.rng[2]
-    lwds[lwds<lwd.rng[1]] <- lwd.rng[1]
-    ## line colors
-    if (all(dfluxes==0)) {
-      cols <- rep(cols[2], length(dfluxes))
-    } else {
-      ncols <- max(sum(df>0), sum(df<0))
-      cols <- colorRampPalette(cols)(2*ncols+3)
-      tmp <- as.numeric(cut(c(0, df), ncols+1))
-      delt <- ncols+2 - tmp[1]
-      cols <- cols[tmp[-1]+delt]
-    }
-  }
   # set line widths and colors
-  for (i in 1:length(rxns)) {
+  for (i in 1:length(rxn.ids)) {
     rxn <- rxns[i]
-    lwd <- lwds[i]
+    lwd <- as.character(lwds[i])
     col <- cols[i]
-    lapply(my.graph@edgeNodeIO$outgoing[[rxn]], function(x) edgeData(my.graph, rxn, x, "lwd") <- as.character(lwd))
-    lapply(my.graph@edgeNodeIO$incoming[[rxn]], function(x) edgeData(my.graph, x, rxn, "lwd") <- as.character(lwd))
+    lapply(my.graph@edgeNodeIO$outgoing[[rxn]], function(x) edgeData(my.graph, rxn, x, "lwd") <- lwd)
+    lapply(my.graph@edgeNodeIO$incoming[[rxn]], function(x) edgeData(my.graph, x, rxn, "lwd") <- lwd)
     lapply(my.graph@edgeNodeIO$outgoing[[rxn]], function(x) edgeData(my.graph, rxn, x, "color") <- col)
     lapply(my.graph@edgeNodeIO$incoming[[rxn]], function(x) edgeData(my.graph, x, rxn, "color") <- col)
   }
+  # plot margins
+  my.graph@graph@boundBox@upRight@y <- my.graph@graph@boundBox@upRight@y + margins[1] # top
+  my.graph@graph@boundBox@botLeft@y <- my.graph@graph@boundBox@botLeft@y - margins[2] # bottom
+  my.graph@graph@boundBox@botLeft@x <- my.graph@graph@boundBox@botLeft@x - margins[3] # left 
+  my.graph@graph@boundBox@upRight@x <- my.graph@graph@boundBox@upRight@x + margins[4] # right  
   
-  # set plot margins
-  my.graph@graph@boundBox@botLeft@y <- my.graph@graph@boundBox@botLeft@y-plt.margins[2] #bottom
-  my.graph@graph@boundBox@botLeft@x <- my.graph@graph@boundBox@botLeft@x-plt.margins[3] #left 
-  my.graph@graph@boundBox@upRight@y <- my.graph@graph@boundBox@upRight@y+plt.margins[1] #top
-  my.graph@graph@boundBox@upRight@x <- my.graph@graph@boundBox@upRight@x+plt.margins[4] #right  
-  
+  # plot
   plot(my.graph)
-  
-  return(my.graph)
+  #return(my.graph)
 }
 
+check.mets.plot <- function(model, fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0, length(rxn.ids)), met.ids=1:length(model$mets), exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", dup.mets=exclude.mets, use.flux=c("dflux","flux"), use=c("both","color","width"), cols=c("green4","grey","red3"), sizes=c(0.5,5), layout=c("neato","fdp","dot","circo","twopi")) {
+  
+  library(visNetwork)
+  
+  s <- model$S
+  s[grep(exclude.mets, model$mets), ] <- 0
+  rxn.ids <- unique(unlist(mets2rxns(met.ids, model)))
+  # network data
+  tmp <- lapply(rxn.ids, function(i) {
+    from <- which(s[,i]<0)
+    to <- which(s[,i]>0)
+    # edge info
+    ed <- as.data.table(expand.grid(from=from, to=to))[, c("title","arrows","smooth"):=list(model$rxns[i], "to", TRUE)]
+    # if only 2 or 3 reactants/products, also pull them together by edges
+    if (length(from)==2) ed <- rbind(ed, data.table(from=from[1], to=from[2], title=model$rxns[i], arrows=NA, smooth=TRUE))
+    if (length(from)==3) ed <- rbind(ed, as.data.table(expand.grid(from=from, to=from))[c(2,3,6)][, c("title","arrows","smooth"):=list(model$rxns[i], NA, TRUE)])
+    if (length(to)==2) ed <- rbind(ed, data.table(from=to[1], to=to[2], title=model$rxns[i], arrows=NA, smooth=TRUE))
+    if (length(to)==3) ed <- rbind(ed, as.data.table(expand.grid(from=to, to=to))[c(2,3,6)][, c("title","arrows","smooth"):=list(model$rxns[i], NA, TRUE)])
+    # node info
+    nd <- data.table(id=c(from,to), label=model$mets[c(from,to)])
+    list(ed=ed, nd=nd)
+  })
+  # collect all edges
+  eds <- rbindlist(lapply(tmp, function(x) x$ed))
+  # collapse
+  # collect all nodes
+  nds <- rbindlist(lapply(tmp, function(x) x$nd))
+  nds <- unique(nds)
+  nds[, group:=ifelse(id %in% met.ids, "main", "adjacent")]
+  visNetwork(nds, eds) %>% visIgraphLayout(layout="layout_with_fr")
+}
 
 #### ---- data preprocessing for iMAT and MTA ----
 
