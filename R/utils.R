@@ -18,13 +18,13 @@ exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
   if (discrt) x <- sign(x)
   if (type==0) {
     `&` <- function(a,b) {
-      if (isTRUE(is.na(a) && b<0)) return(b)
-      if (isTRUE(is.na(b) && a<0)) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
+      #if (isTRUE(is.na(a) && b<0)) return(b)
+      #if (isTRUE(is.na(b) && a<0)) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
       return(min(a,b))
     }
     `|` <- function(a,b) {
-      if (isTRUE(is.na(a) && b>0)) return(b)
-      if (isTRUE(is.na(b) && a>0)) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
+      #if (isTRUE(is.na(a) && b>0)) return(b)
+      #if (isTRUE(is.na(b) && a>0)) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
       return(max(a,b))
     }
   } else if (type==1) {
@@ -128,6 +128,28 @@ get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.defau
   res <- lapply(ego(gp, order=order, nodes=ids), as.vector)
   names(res) <- ids
   res
+}
+
+subset.model <- function(model, i, j) {
+  # subset model like a matrix, i for metabolites, j for reactions
+  # the approach below will not work properly if e.g. the number of reactions happens to be equal to the number of metabolites, of any of them happens to be equal to the number of genes.
+  m <- nrow(model$S)
+  n <- ncol(model$S)
+  p <- length(model$genes)
+  if (m==n || n==p || m==p) stop("subset.model: sorry this case won't work.\n")
+  res <- lapply(model, function(x) {
+    if (length(dim(x))==2) {
+      if (nrow(x)==m) xx <- x[i, ] else xx <- x
+      if (ncol(x)==n) xx <- xx[, j]
+    } else if (length(x)==m) {
+      xx <- x[i]
+    } else if (length(x)==n) {
+      xx <- x[j]
+    } else {
+      xx <- x
+    }
+    xx
+  })
 }
 
 get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, nc=1L) {
