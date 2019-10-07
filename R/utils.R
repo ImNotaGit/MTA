@@ -753,16 +753,18 @@ get.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, discrt=T
   vec
 }
 
-discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, na.replace=TRUE, model) {
+discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, na.replace=TRUE, f=mean, model) {
   # produce input vector for iMAT:
   # average across all samples in the data into a single vector of expression values of all genes, then select only those genes in the model, then discretize the expression values into low (-1L), medium (0L), and high (1L), missing genes (i.e. model genes that are not in the expression data) will be NA's.
 
   if (class(dat)=="ExpressionSet") {
     mat <- exprs(dat)
     rownames(mat) <- fData(dat)$Gene.symbol
-  } else if (is.matrix(dat)) mat <- dat
+  } else if (is.matrix(dat)) {
+    mat <- dat
+  } else if (is.vector(dat)) vec <- dat
   
-  vec <- rowMeans(mat)
+  if (!exists("vec")) vec <- apply(mat, 1, f, na.rm=TRUE)
   vec <- vec[model$genes]
   na.idx <- is.na(vec)
   cat(sprintf("%d model genes not in the expression data, ", sum(na.idx)))
