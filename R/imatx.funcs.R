@@ -4,7 +4,7 @@ library(Rcplex.my)
 # need to source utils.R
 # need to source sampling.funcs.R
 
-imat.pars <- list(flux.act=1, flux.inact=0.1, flux.delta.rel=0, flux.delta=0.1, flux.bound=1000)
+imat.pars <- list(flux.act=1, flux.inact=0.1, flux.delta.rel=0.1, flux.delta=0.1, flux.bound=1000)
 milp.pars <- list(trace=1, nodesel=0, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1)
 sampl.pars <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400, ncores=1L)
 
@@ -201,13 +201,15 @@ form.imatx.de0 <- function(model, i1, i2, df, rr, params) {
     S <- rbind(cbind(S, sparseMatrix(NULL,NULL,dims=c(nrow(S),1))),
                sparseMatrix(rep(1,3), c(i1, i2, ncol(S)+1), x=c(params$flux.delta.rel-1, 1, (2-params$flux.delta.rel)*params$flux.bound), dims=c(1,ncol(S)+1)))
   }
-  model$rowlb <- c(model$rowlb, (params$flux.delta.rel-2)*params$flux.bound)
-  model$rowub <- c(model$rowub, (2-params$flux.delta.rel)*params$flux.bound-params$flux.delta)
-  model$lb <- c(model$lb, 0)
-  model$ub <- c(model$ub, 1)
-  model$c <- c(model$c, 1)
-  model$vtype <- c(model$vtype, "I")
-  model$var.ind <- c(model$var.ind, "z+")
+  if (df!=0) { # for now I haven't implemented df==0, so when df==0 should do nothing
+    model$rowlb <- c(model$rowlb, (params$flux.delta.rel-2)*params$flux.bound)
+    model$rowub <- c(model$rowub, (2-params$flux.delta.rel)*params$flux.bound-params$flux.delta)
+    model$lb <- c(model$lb, 0)
+    model$ub <- c(model$ub, 1)
+    model$c <- c(model$c, 1)
+    model$vtype <- c(model$vtype, "I")
+    model$var.ind <- c(model$var.ind, "z+")
+  }
   # reversible reactions
   if (rr) {
     if (df>0) {
@@ -225,17 +227,17 @@ form.imatx.de0 <- function(model, i1, i2, df, rr, params) {
                  sparseMatrix(rep(1,3), c(i1, i2, ncol(S)+1), x=c(1-params$flux.delta.rel, 1, (2-params$flux.delta.rel)*params$flux.bound), dims=c(1,ncol(S)+1)))
       S <- rbind(S, sparseMatrix(rep(1,3), c(i1, i2, ncol(S)), x=c(params$flux.delta.rel-1, 1, (params$flux.delta.rel-2)*params$flux.bound), dims=c(1,ncol(S))))
     }
-    if (df!=0) { # for now I haven't implement df==0, so when df==0 should do nothing
+    if (df!=0) { # for now I haven't implemented df==0, so when df==0 should do nothing
       # (z+) + (z-) = 1
       S <- rbind(S, sparseMatrix(rep(1,2), c(ncol(S)-1, ncol(S)), dims=c(1,ncol(S))))
+      model$rowlb <- c(model$rowlb, c((params$flux.delta.rel-2)*params$flux.bound+params$flux.delta, (params$flux.delta.rel-2)*params$flux.bound, (params$flux.delta.rel-2)*params$flux.bound+params$flux.delta), 0)
+      model$rowub <- c(model$rowub, c((2-params$flux.delta.rel)*params$flux.bound, (2-params$flux.delta.rel)*params$flux.bound-params$flux.delta, (2-params$flux.delta.rel)*params$flux.bound), 1)
+      model$lb <- c(model$lb, 0)
+      model$ub <- c(model$ub, 1)
+      model$c <- c(model$c, 1)
+      model$vtype <- c(model$vtype, "I")
+      model$var.ind <- c(model$var.ind, "z-")
     }
-    model$rowlb <- c(model$rowlb, c((params$flux.delta.rel-2)*params$flux.bound+params$flux.delta, (params$flux.delta.rel-2)*params$flux.bound, (params$flux.delta.rel-2)*params$flux.bound+params$flux.delta))
-    model$rowub <- c(model$rowub, c((2-params$flux.delta.rel)*params$flux.bound, (2-params$flux.delta.rel)*params$flux.bound-params$flux.delta, (2-params$flux.delta.rel)*params$flux.bound))
-    model$lb <- c(model$lb, 0)
-    model$ub <- c(model$ub, 1)
-    model$c <- c(model$c, 1)
-    model$vtype <- c(model$vtype, "I")
-    model$var.ind <- c(model$var.ind, "z-")
   }
   model$S <- S
 }
@@ -345,7 +347,7 @@ update.model <- function(imat.res, sol=1, params) {
   tmp <- imat.res$S[, (imat.res$var.ind %in% c("z+","z-") & imat.res$milp.out[[sol]]$xopt==0) | imat.res$var.ind %in% c("y+","y-","y0")]
   rind <- rowSums(tmp)==0
   cind <- imat.res$var.ind=="v"
-  x <- rowSums(imat.res$S[, imat.res$var.ind %in% c("z+","z-") & imat.res$milp.out[[sol]]$xopt==1])
+  x <- rowSums(imat.res$S[rind, imat.res$var.ind %in% c("z+","z-") & imat.res$milp.out[[sol]]$xopt==1])
   res <- subset.model(imat.res, rind, cind)
   res$rowlb <- res$rowlb - x
   res$rowub <- res$rowub - x
