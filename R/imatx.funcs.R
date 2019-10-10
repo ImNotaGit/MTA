@@ -8,23 +8,20 @@ imat.pars <- list(flux.act=1, flux.inact=0.1, flux.delta.rel=0.1, flux.delta=0.1
 milp.pars <- list(trace=1, nodesel=0, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1)
 sampl.pars <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400, ncores=1L)
 
-imatx2 <- function(model, expr, dflux, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
+imatx <- function(model, expr, dflux, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
   
-  # model as environment
-  model <- as.environment(model)
-
   # formulate iMAT model
-  imat.model <- form.imatx2(model, expr, dflux, imat.params)
+  imat.model <- form.imatx(model, expr, dflux, imat.params)
 
   # run the iMAT MILP
   run.imat(imat.model, milp.params) # modify imat.model in place
   
   # update the original metabolic model based on iMAT result
-  res.model <- update.model(imat.model, sol=1, imat.params)
+  res.model <- update.model.imatx(imat.model, sol=1, imat.params)
 
   if (!is.null(sampl.params)) {
     # sample the metabolic model to get the fluxes of the reference state
-    sample.model(res.model, sampl.params) # update model in place
+    sample.model(res.model, sampl.params) # update res.model in place
   }
   
   # close CPLEX
@@ -34,19 +31,23 @@ imatx2 <- function(model, expr, dflux, imat.params=imat.pars, milp.params=milp.p
   res.model
 }
 
-imatx3 <- function(model, expr, df12, df23, df13, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
+imatx2steps <- function(model, expr, dflux, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
   
-  # model as environment
-  model <- as.environment(model)
-  
-  # formulate iMAT model
-  imat.model <- form.imatx3(model, expr, df12, df23, df13, imat.params)
-  
+  # formulate iMAT model step 1 (i.e. the original imat)
+  imat.model1 <- form.imat(model, expr, imat.params)
   # run the iMAT MILP
-  run.imat(imat.model, milp.params) # modify imat.model in place
+  run.imat(imat.model1, milp.params) # modify imat.model in place
   
   # update the original metabolic model based on iMAT result
-  res.model <- update.model(imat.model, sol=1, imat.params)
+  imat.model2 <- update.model.imat(model, imat.model1, sol=1, imat.params)
+  # formulate iMAT model step 2 (xde) upon the updated model from the above step
+  imat.model2 <- form.imat.xde(imat.model2, dflux, imat.params)
+  
+  # run the iMAT MILP
+  run.imat(imat.model2, milp.params) # modify imat.model2 in place
+  
+  # update the original metabolic model based on iMAT result
+  res.model <- update.model.imat.xde(imat.model2, sol=1, imat.params)
   
   if (!is.null(sampl.params)) {
     # sample the metabolic model to get the fluxes of the reference state
@@ -60,7 +61,7 @@ imatx3 <- function(model, expr, df12, df23, df13, imat.params=imat.pars, milp.pa
   res.model
 }
 
-form.imatx <- function(model, expr, params) {
+form.imat <- function(model, expr, params) {
 
   # reaction data
   rxns.int.raw <- exprs2rxns(expr, 0, model)
@@ -112,86 +113,13 @@ form.imatx <- function(model, expr, params) {
   var.ind <- rep(c("v","y+","y-","y0"), c(n.rxns, n.act, n.act.rev, n.inact)) # iMAT variable type indicators (v: fluxex; y+/-/0: indicator variables)
 
   # return iMAT model as an environment
-  as.environment(list(irxn.ids=model$irxn.ids, genes.int=expr, rxns.int.raw=rxns.int.raw, rxns.int=rxns.int,
+  as.environment(list(irxn.ids=model$irxn.ids, # if not exist, will be NULL
+                      genes.int=expr, rxns.int.raw=rxns.int.raw, rxns.int=rxns.int,
                       rxns.act=rxns.act, rxns.act.rev=rxns.act.rev, rxns.inact=rxns.inact, rxns.inact.rev=rxns.inact.rev, var.ind=var.ind,
                       c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub, vtype=vtype))
 }
 
-
-form.imatx.de2 <- function(model, dflux, params) {
-  
-  # model should be output from form.imatx()
-  
-  irxns <- model$irxn.ids
-  dflux <- dflux[irxns]
-  nc2 <- length(irxns)
-  nc1 <- ncol(model$S) - nc2
-  
-  # 1. Changed reactions in cell2 vs cell1: specify the z+ indicator variables representing v1 <= (1-delta)*v2 when rxns.int>0 (i.e. upregulated in 2 vs 1) and v2 <= (1-delta)*v1 when rxns.int<0 (i.e. downregulated in 2 vs 1)
-  rxns.d <- which(dflux!=0)
-  n.d <- length(rxns.d)
-  m1 <- sparseMatrix(1:n.d, irxns[rxns.d], x=ifelse(dflux[rxns.d]>0, 1, params$flux.delta.rel-1), dims=c(n.d, nc1))
-  m2 <- sparseMatrix(1:n.d, rxns.d, x=ifelse(dflux[rxns.d]<0, 1, params$flux.delta.rel-1), dims=c(n.d, nc2))
-  m3 <- Diagonal(n.d, x=(2-params$flux.delta.rel)*params$flux.bound)
-  S <- cbind(m1, m2, m3)
-  
-  # 1.1 For those reversible ones among #1:
-  rxns.drev <- which(dflux!=0 & model1$lb[irxns]<0)
-  n.drev <- length(rxns.drev)
-  # 1.1a. need to add additional constraint involving z+, representing v1 >= -(1-delta)*v2 (when 2>1) or v2 >= -(1-delta)*v1 (when 2<1)
-  m1 <- sparseMatrix(1:n.drev, irxns[rxns.drev], x=ifelse(dflux[rxns.drev]>0, 1, 1-params$flux.delta.rel), dims=c(n.drev, nc1))
-  m2 <- sparseMatrix(1:n.drev, rxns.drev, x=ifelse(dflux[rxns.drev]<0, 1, 1-params$flux.delta.rel), dims=c(n.drev, nc2))
-  m3 <- sparseMatrix(1:n.drev, match(rxns.drev, rxns.d), x=(params$flux.delta.rel-2)*params$flux.bound, dims=c(n.drev, n.d))
-  S <- rbind(S, cbind(m1, m2, m3))
-  # 1.1b. need to specify the extra z- indicator variables, representing the alternative case of (1-delta)*v2 <= v1 <= -(1-delta)*v2 (when 2>1) or (1-delta)*v1 <= v2 <= -(1-delta)*v1 (when 2<1)
-  # thus, an reversible active reaction has both the z+ and z- indicator variables, at most one of z+ and z- can be 1
-  m1 <- sparseMatrix(1:n.drev, irxns[rxns.drev], x=ifelse(dflux[rxns.drev]>0, 1, 1-params$flux.delta.rel), dims=c(n.drev, nc1))
-  m2 <- sparseMatrix(1:n.drev, rxns.drev, x=ifelse(dflux[rxns.drev]<0, 1, 1-params$flux.delta.rel), dims=c(n.drev, nc2))
-  m3 <- sparseMatrix(NULL, NULL, dims=c(n.drev, n.d))
-  m4 <- Diagonal(n.drev, x=(2-params$flux.delta.rel)*params$flux.bound)
-  m1a <- sparseMatrix(1:n.drev, irxns[rxns.drev], x=ifelse(dflux[rxns.drev]>0, 1, params$flux.delta.rel-1), dims=c(n.drev, nc1))
-  m2a <- sparseMatrix(1:n.drev, rxns.drev, x=ifelse(dflux[rxns.drev]<0, 1, params$flux.delta.rel-1), dims=c(n.drev, nc2))
-  S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(nrow(S), n.drev))), cbind(m1,m2,m3,m4), cbind(m1a,m2a,m3,-m4))
-  # 1.1c. forcing (z+) + (z-) <=1 for the reversible reactions, otherwise there can be cases where both z+ and z- = 1 due to numerical errors (?)
-  m1 <- sparseMatrix(NULL, NULL, dims=c(n.drev, nc1+nc2))
-  m2 <- sparseMatrix(1:n.drev, match(rxns.drev, rxns.d), dims=c(n.drev, n.d))
-  m3 <- Diagonal(n.drev)
-  S <- rbind(S, cbind(m1, m2, m3))
-  
-  # the final S matrix
-  S <- rbind(cbind(model$S, sparseMatrix(NULL, NULL, dims=c(nrow(model$S), ncol(S)-ncol(model$S)))),
-             S)
-  
-  # other parameters
-  rowlb <- c(model$rowlb,
-             rep((params$flux.delta.rel-2)*params$flux.bound, n.d),
-             rep((params$flux.delta.rel-2)*params$flux.bound+params$flux.delta, n.drev),
-             rep((params$flux.delta.rel-2)*params$flux.bound, n.drev),
-             rep((params$flux.delta.rel-2)*params$flux.bound+params$flux.delta, n.drev),
-             rep(0,n.drev))
-  rowub <- c(model$rowub,
-             rep((2-params$flux.delta.rel)*params$flux.bound-params$flux.delta, n.d),
-             rep((2-params$flux.delta.rel)*params$flux.bound, n.drev),
-             rep((2-params$flux.delta.rel)*params$flux.bound-params$flux.delta, n.drev),
-             rep((2-params$flux.delta.rel)*params$flux.bound, n.drev),
-             rep(1,n.drev))
-  n <- ncol(S) - ncol(model$S)
-  lb <- c(model$lb, rep(0, n))
-  ub <- c(model$ub, rep(1, n))
-  c <- c(model$c, rep(1, n))
-  vtype <- c(model$vtype, rep("I", n))
-  var.ind <- c(model$var.ind, rep(c("z+","z-"), c(n.d, n.drev)))
-  res <- list(dflux=dflux, rxns.diff=rxns.d, rxns.diff.rev=rxns.drev,
-              rxns.act=model$rxns.act, rxns.act.rev=model$rxns.act.rev,
-              rxns.inact=model$rxns.inact, rxns.inact.rev=model$rxns.inact.rev, var.ind=var.ind,
-              c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub, vtype=vtype)
-  
-  # return iMAT model as an environment
-  as.environment(res)
-}
-
-form.imatx.de0 <- function(model, i1, i2, df, rr, params) {
-  # model should be an environment, such that it can be modified in place
+form.imat.xde0 <- function(model, i1, i2, df, rr, params) {
   S <- model$S
   # z+
   if (df>0) {
@@ -240,73 +168,59 @@ form.imatx.de0 <- function(model, i1, i2, df, rr, params) {
     }
   }
   model$S <- S
+  model
 }
 
-form.imatx.de2 <- function(model, dflux, params) {
-  # model should be output from form.imatx()
-  # model is an environment and will be modified in place by form.imatx.de0()
+form.imat.xde <- function(model, dflux, params) {
+  # model can be a "raw" model, or can be output from form.imat()
+  # model will be converted to an environment if it is not, and will be modified in place by form.imat.xde0()
+  if (!is.environment(model)) model <- as.environment(model)
   irxns <- model$irxn.ids
-  dflux <- dflux[irxns]
+  if (is.list(dflux)) dflux <- lapply(dflux, function(x) x[irxns]) else dflux <- dflux[irxns]
   n <- length(irxns)
   nc <- sum(model$vtype=="C") - n
   
-  for (i in 1:n) {
-    rr <- model$lb[irxns[i]]<0
-    i1 <- irxns[i]
-    i2 <- nc + i
-    df <- dflux[i]
-    form.imatx.de0(model, i1, i2, df, rr, params)
+  if (!is.list(dflux)) {
+    for (i in 1:n) {
+      rr <- model$lb[irxns[i]]<0
+      i1 <- irxns[i]
+      i2 <- nc + i
+      df <- dflux[i]
+      form.imat.xde0(model, i1, i2, df, rr, params)
+    }
   }
-}
-
-form.imatx.de3 <- function(model, df12, df23, df13, params) {
-  # model should be output from form.imatx()
-  # model is an environment and will be modified in place by form.imatx.de0()
-  irxns <- model$irxn.ids
-  df12 <- df12[irxns]
-  df23 <- df23[irxns]
-  df13 <- df13[irxns]
-  n <- length(irxns)
-  nc <- sum(model$vtype=="C") - 2*n
-  
-  for (i in 1:n) {
-    rr <- model$lb[irxns[i]]<0
-    # 1--2
-    i1 <- irxns[i]
-    i2 <- nc + i
-    df <- df12[i]
-    form.imatx.de0(model, i1, i2, df, rr, params)
-    # 2--3
-    i1 <- nc + i
-    i2 <- nc + n + i
-    df <- df23[i]
-    form.imatx.de0(model, i1, i2, df, rr, params)
-    # 1--3
-    i1 <- irxns[i]
-    i2 <- nc + n + i
-    df <- df13[i]
-    form.imatx.de0(model, i1, i2, df, rr, params)
+  if (is.list(dflux) && length(dflux)==3) {
+    for (i in 1:n) {
+      rr <- model$lb[irxns[i]]<0
+      # 1--2
+      i1 <- irxns[i]
+      i2 <- nc - n + i
+      df <- dflux$de12[i]
+      form.imat.xde0(model, i1, i2, df, rr, params)
+      # 2--3
+      i1 <- nc - n + i
+      i2 <- nc + i
+      df <- dflux$de23[i]
+      form.imat.xde0(model, i1, i2, df, rr, params)
+      # 1--3
+      i1 <- irxns[i]
+      i2 <- nc + i
+      df <- dflux$de13[i]
+      form.imat.xde0(model, i1, i2, df, rr, params)
+    }
   }
-}
-
-form.imatx2 <- function(model, expr, dflux, params) {
-  
-  # original imat model for expr
-  model <- form.imatx(model, expr, params)
-  
-  # DE model
-  form.imatx.de2(model, dflux, params)
   model
 }
 
-form.imatx3 <- function(model, expr, df12, df23, df13, params) {
+form.imatx <- function(model, expr, dflux, params) {
   
-  # original imat model for expr
-  model <- form.imatx(model, expr, params)
+  # original imat model
+  imat.model <- form.imat(model, expr, params)
   
   # DE model
-  form.imatx.de3(model, df12, df23, df13, params)
-  model
+  form.imat.xde(imat.model, dflux, params) # modify imat.model in place
+  
+  imat.model
 }
 
 run.imat <- function(model, params) {
@@ -325,10 +239,10 @@ run.imat <- function(model, params) {
   
   res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=n)
 
-  if (n==1) res <- list(res)
+  if (!is.na(n) && n==1) res <- list(res)
   res <- lapply(res, function(x) x[c("xopt","obj","status")])
   stats <- sapply(res, function(x) x$status)
-  stats <- unique(stats[!stats %in% c(101,102,129,130)])
+  stats <- unique(stats[!stats %in% c(101,102,128,129,130)])
 
   if (length(stats)>0) {
     model$milp.out <- res
@@ -340,19 +254,8 @@ run.imat <- function(model, params) {
   model
 }
 
-update.model <- function(imat.res, sol=1, params) {
+update.model.imat <- function(model, imat.res, sol=1, params) {
   
-  ## the part for imat.de: extract the model from imat.res
-  # rows and cols to keep from imat.res$S: the "v" part and the z==1 part.
-  tmp <- imat.res$S[, (imat.res$var.ind %in% c("z+","z-") & imat.res$milp.out[[sol]]$xopt==0) | imat.res$var.ind %in% c("y+","y-","y0")]
-  rind <- rowSums(tmp)==0
-  cind <- imat.res$var.ind=="v"
-  x <- rowSums(imat.res$S[rind, imat.res$var.ind %in% c("z+","z-") & imat.res$milp.out[[sol]]$xopt==1])
-  res <- subset.model(imat.res, rind, cind)
-  res$rowlb <- res$rowlb - x
-  res$rowub <- res$rowub - x
-  
-  ## the part for the original iMAT
   yp <- imat.res$milp.out[[sol]]$xopt[imat.res$var.ind=="y+"]
   ym <- imat.res$milp.out[[sol]]$xopt[imat.res$var.ind=="y-"]
   y0 <- imat.res$milp.out[[sol]]$xopt[imat.res$var.ind=="y0"]
@@ -361,12 +264,39 @@ update.model <- function(imat.res, sol=1, params) {
   bk <- imat.res$rxns.act.rev[ym==1]
   inact <- imat.res$rxns.inact[y0==1]
   inact.rev <- intersect(inact, imat.res$rxns.inact.rev)
+  
   # update model
-  res$lb[fw] <- params$flux.act
-  res$ub[bk] <- -params$flux.act
-  res$ub[inact] <- params$flux.inact
-  res$lb[inact.rev] <- -params$flux.inact
+  model$lb[fw] <- params$flux.act
+  model$ub[bk] <- -params$flux.act
+  model$ub[inact] <- params$flux.inact
+  model$lb[inact.rev] <- -params$flux.inact
+  model$c <- rep(0, length(model$c))
+  model$vtype <- rep("C", length(model$c))
+  model$var.ind <- rep("v", length(model$c))
+  model
+}
+
+update.model.imat.xde <- function(imat.res, sol=1, params) {
+  
+  # extract the model from imat.res
+  # rows and cols to keep from imat.res$S: the "v" part and the z==1 part.
+  tmp <- imat.res$S[, (imat.res$var.ind %in% c("z+","z-") & imat.res$milp.out[[sol]]$xopt==0) | imat.res$var.ind %in% c("y+","y-","y0")]
+  rind <- rowSums(tmp)==0
+  cind <- imat.res$var.ind=="v"
+  x <- rowSums(imat.res$S[rind, imat.res$var.ind %in% c("z+","z-") & imat.res$milp.out[[sol]]$xopt==1])
+  res <- subset.model(imat.res, rind, cind)
+  res$rowlb <- res$rowlb - x
+  res$rowub <- res$rowub - x
 
   res
+}
+
+update.model.imatx <- function(imat.res, sol=1, params) {
+  
+  ## the part for imat.de: extract the model from imat.res
+  res <- update.model.imat.xde(imat.res, sol, params)
+  
+  ## the part for the original iMAT
+  res <- update.model.imat(res, imat.res, sol, params)
 }
 

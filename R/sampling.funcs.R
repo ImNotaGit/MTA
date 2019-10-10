@@ -34,7 +34,7 @@ sample.model <- function(model, params) {
 }
 
 sample.warmup.pnts <- function(model, n, ncores) {
-  n.rxns <- length(model$rxns)
+  n.rxns <- ncol(model$S)
   if (n<2*n.rxns) {
     n <- 2*n.rxns
     warning(sprintf("#{warmup points} should be at least 2*#{reactions}=%d.\n", 2*n.rxns))
@@ -51,7 +51,7 @@ sample.warmup.pnts <- function(model, n, ncores) {
 }
 
 get.orth.pnts <- function(model, n, ncores) {
-  n.rxns <- length(model$rxns)
+  n.rxns <- ncol(model$S)
   mat <- cbind(Diagonal(n.rxns), Diagonal(n.rxns, x=-1))
   if (n<=2*n.rxns) {
     mat <- mat[, sample(2*n.rxns, n)]
@@ -65,7 +65,7 @@ get.orth.pnts <- function(model, n, ncores) {
 }
 
 get.rand.pnts <- function(model, n, ncores) {
-  n.rxns <- length(model$rxns)
+  n.rxns <- ncol(model$S)
   cs <- runif(n.rxns*n) - 0.5
   dim(cs) <- c(n.rxns, n)
   cl <- makeCluster(ncores, type="FORK")
