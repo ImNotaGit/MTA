@@ -152,6 +152,27 @@ subset.model <- function(model, i, j) {
   })
 }
 
+c.model <- function(model1, model2) {
+  # simply concatenate two models, for now, ignore rules, grRules, rxnGeneMat
+  xs <- setdiff(intersect(names(model1), names(model2)), c("rules","grRules","rxnGeneMat"))
+  names(xs) <- xs
+  res <- lapply(xs, function(i) {
+    x1 <- model1[[i]]
+    x2 <- model2[[i]]
+    if (length(dim(x1))==2) {
+      xx <- rbind(cbind(x1, sparseMatrix(NULL, NULL, dims=c(nrow(x1), ncol(x2)))),
+                  cbind(sparseMatrix(NULL, NULL, dims=c(nrow(x2), ncol(x1))), x2))
+    } else if (is.vector(x1)) {
+      if (is.numeric(x1) || i=="vtype" || i=="metFormulas" || i=="csense") {
+        xx <- c(x1, x2)
+      } else if (i=="description") {
+        xx <- paste(x1, x2)
+      } else xx <- c(paste0(x1,"_1"), paste0(x2,"_2"))
+    }
+    xx
+  })
+}
+
 get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, nc=1L) {
   # get the max or min flux of the i'th reaction in the model
   # `i` can also be a vector of multiple reaction indices, with coef being their coefficients, then the corresponding linear objective function will be optimized
