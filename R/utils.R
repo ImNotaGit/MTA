@@ -196,6 +196,19 @@ get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, 
   } else return(res$obj)
 }
 
+set.lb.biomass <- function(model, value=0.1, of.max=TRUE, rgx="biomass") {
+  i <- grep(rgx, model$rxns, ignore.case=TRUE)
+  if (length(i)==0) stop("No biomass reaction mapped by regex.\n")
+  if (length(i)>1) stop("Multiple reactions mapped by regex:\n", paste(model$rxns[i], collapse="\n"))
+  if (of.max) {
+    max.val <- get.opt.flux(model, i)
+    model$lb[i] <- value * max.val
+  } else {
+    model$lb[i] <- value
+  }
+  model
+} 
+
 rm.rxns <- function(model, vec) {
   # remove reactions from model
   # vec is a vector containing the indices of reactions to remove, or a logical vector with length equal to the number of reactions where the reactions to be removed is represented by TRUE

@@ -1,6 +1,5 @@
 library(Matrix)
 library(data.table)
-library(Rfast)
 library(Rcplex.my)
 # need to source utils.R
 # need to source sampling.funcs.R
@@ -12,9 +11,6 @@ mep.pars <- list(beta=1e9, damp=0.9, max.iter=2000, dlb=1e-50, dub=1e50, epsil=1
 
 imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
   
-  # model as environment
-  model <- as.environment(model)
-
   # formulate iMAT model
   imat.model <- form.imat(model, expr, imat.params)
 
@@ -22,25 +18,22 @@ imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, samp
   run.imat(imat.model, milp.params) # modify imat.model in place
   
   # update the original metabolic model based on iMAT result
-  update.model.imat(model, imat.model, sol=0, imat.params) # update model in place
+  res.model <- update.model.imat(model, imat.model, sol=0, imat.params)
 
   if (!is.null(sampl.params)) {
     # sample the metabolic model to get the fluxes of the reference state
-    sample.model(model, sampl.params) # update model in place
+    sample.model(res.model, sampl.params) # update model in place
   }
   
   # close CPLEX
   Rcplex.close()
 
   # return
-  model
+  res.model
 }
 
 imat.mep <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, mep.params=mep.pars, nc=1L) {
   
-  # model as environment
-  model <- as.environment(model)
-
   # formulate iMAT model, return an environment
   imat.model <- form.imat(model, expr, imat.params)
 
@@ -48,20 +41,20 @@ imat.mep <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, 
   run.imat(imat.model, milp.params) # imat.model modified in place since it's an environment
 
   # update the original metabolic model based on iMAT result
-  update.model.imat(model, imat.model, sol=0, imat.params) # model updated in place since it's an environment
+  res.model <- update.model.imat(model, imat.model, sol=0, imat.params)
 
   # process model for MEP
   cat("Preparing for MEP...\n")
-  preprocess.model(model, nc=nc) # model modified in place since it's an environment
+  preprocess.model(res.model, nc=nc) # res.model modified in place since it's an environment
 
   # close CPLEX
   Rcplex.close()
 
   # run MEP to get the fluxes of the reference state
-  run.mep(model, mep.params) # results added to model in place since it's an environment
+  run.mep(res.model, mep.params) # results added to res.model in place since it's an environment
   
   # return
-  model
+  res.model
 }
 
 imatx <- function(model, expr, dflux, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
@@ -393,7 +386,7 @@ run.imat <- function(model, params) {
 get.imat.xopt <- function(imat.res, sol=0) {
   # if sol==0, pool all solutions and take the "consensus", otherwise use the one solution specified
   if (sol==0) {
-    xopt <- do.call(cbind, sapply(imat.res$milp.out, function(x) {
+    xopt <- do.call(cbind, lapply(imat.res$milp.out, function(x) {
       if (x$status %in% c(101,102,128,129,130)) x$xopt else NULL
     }))
     if (is.null(xopt)) stop("run.imat: all MILP solutions may contain issues.\n")
@@ -421,7 +414,7 @@ update.model.imat <- function(model, imat.res, sol=0, params) {
     res.model$rowlb <- res.model$rowlb - x
     res.model$rowub <- res.model$rowub - x
   } else {
-    res.model <- as.enrivonment(model)
+    res.model <- as.environment(model)
   }
   
   if ("y+" %in% imat.res$var.ind || "y+_1" %in% imat.res$var.ind) {
