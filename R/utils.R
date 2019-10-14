@@ -313,25 +313,20 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
         # another effect size measure: "normalized" difference of median fluxes
         m0 <- median(s0)
         m1 <- median(s1)
-        ndm <- ifelse(m1>=m0, (m1-m0)/(ub-m0), (m1-m0)/(m0-lb))
+        dm <- m1-m0
         data.table(lb0=min(s0), ub0=max(s0), med0=m0,
                    lb1=min(s1), ub1=max(s1), med1=m1,
-                   norm.diff.med=ndm, r=wilcox.r, pval=wilcox.p)
+                   diff.med=dm, r=wilcox.r, pval=wilcox.p)
       }, error=function(e) {
-        data.table(lb0=NA, ub0=NA, med0=NA, lb1=NA, ub1=NA, med1=NA, norm.diff.med=NA, r=NA, pval=NA)
+        data.table(lb0=NA, ub0=NA, med0=NA, lb1=NA, ub1=NA, med1=NA, diff.med=NA, r=NA, pval=NA)
       })
     }
-    res <- rbindlist(mclapply(rxns, function(i) dflux.test(imat.model0$sampl$pnts[i, sr0, drop=FALSE], imat.model1$sampl$pnts[i, sr1, drop=FALSE], lb, ub), mc.cores=nc))
+    res <- rbindlist(mclapply(rxns, function(i) dflux.test(imat.model0$sampl$pnts[i, sr0], imat.model1$sampl$pnts[i, sr1], lb, ub), mc.cores=nc))
     res[, padj:=p.adjust(pval, method="BH")]
     res <- cbind(data.table(id=rxns, rxn=imat.model0$rxns[rxns]), res)
-    res <- res[order(padj, pval, -abs(r), -abs(norm.diff.med))]
+    res <- res[order(-abs(diff.med), -abs(r), padj, pval)]
     # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
-    res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(norm.diff.med)>quantile(abs(norm.diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
-    # add summary of flux differences 1: positive value means increased absolute flux, vice versa; 0 means unchanged
-    #res[, dir1:=ifelse(dir==0, "0",
-    #            ifelse(med0>=0 & med1>=0, as.character(dir),
-    #            ifelse(med0<=0 & med1<=0, as.character(-dir),
-    #            ifelse(abs(med1)<abs(med0), "-1r", "1r"))))]
+    res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(diff.med)>quantile(abs(diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
   } else {
     ub0 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model0, dir="max", mc.cores=nc))
     lb0 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model0, dir="min", mc.cores=nc))
@@ -340,12 +335,12 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
     Rcplex.close()
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
-    ndm <- ifelse(m1>=m0, (m1-m0)/(ub-m0), (m1-m0)/(m0-lb))
+    dm <- m1-m0
     res <- data.table(id=rxns, rxn=imat.model0$rxns[rxns],
                       lb0=lb0, ub0=ub0, med0=m0,
                       lb1=lb1, ub1=ub1, med1=m1,
-                      norm.diff.med=ndm)
-    res <- res[order(-abs(norm.diff.med))]
+                      diff.med=dm)
+    res <- res[order(-abs(diff.med))]
     # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
     res[, dir:=ifelse(ub1>ub0 & lb1>lb0, 3,
                ifelse(ub1<ub0 & lb1<lb0, -3,
@@ -353,11 +348,6 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
                ifelse(ub1<ub0 & lb1==lb0 | ub1==ub0 & lb1<lb0, -2,     
                ifelse(m1>m0, 1,
                ifelse(m1<m0, -1, 0))))))]
-    # add summary of flux differences 1: positive value means increased absolute flux, vice versa; 0 means unchanged
-    #res[, dir1:=ifelse(dir==0, "0",
-    #            ifelse(med0>=0 & med1>=0, as.character(dir),
-    #            ifelse(med0<=0 & med1<=0, as.character(-dir),
-    #            ifelse(abs(med1)<abs(med0), "-1r", "1r"))))]
   }
   
   res
@@ -377,13 +367,12 @@ get.diff.flux.x2 <- function(imat.model, c0="cell2", c1="cell1", use.sample=TRUE
   res[, id:=rxn.ids[id]]
 }
 
-get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, sample.range=NULL, mets="all", nc=1L, padj.cutoff=0.01, r.cutoff=0.1, diff.med.cutoff=0.1) {
-    # do differential flux analysis for the flux through each metabolite (i.e. either the production or consumption, they should be the same in magnitude if S*v=0; below I am using the production flux): imat.model1 compared to imat.model0
-    # if use.sample, use the sampled flux distributions saved in the imat.models, by default, use 1001:end sample points; or specify range of sample points for model0 and model1 respectively in a list
-    # is use.sample==FALSE, then deterimine diff flux by obtaining the min and max fluxes through each metabolite for the two models, and regard metabolites with either increased lb or increased ub as upregulated and vice versa; ambiguous cases (e.g. lowered lb and increased ub) are regarded as non-differential
-    # by default, mets="all" means performing the analysis across all metabolites; or specify metabolite indices; nc is the number of cores for paralleling across the metabolites
-    # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed metabolites when use.sample==TRUE
-  if (mets=="all") mets <- 1:length(imat.model0$mets)
+get.diff.comb.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.range=NULL, rxns, nc=1L, padj.cutoff=0.01, r.cutoff=0.1, diff.med.cutoff=0.1) {
+  # do differential flux analysis for the linear combination of fluxes of rxns; rxns is a list, each element is a named vector, the name being the rxn indices to combine, and the values being the coefficient of the linear combination; this function will do diff flux for each case corresponding to the elements of rxns.
+  # if use.sample, use the sampled flux distributions saved in the imat.models, by default, use 1001:end sample points; or specify range of sample points for model0 and model1 respectively in a list
+  # is use.sample==FALSE, then deterimine diff flux by obtaining the min and max fluxes through each metabolite for the two models, and regard metabolites with either increased lb or increased ub as upregulated and vice versa; ambiguous cases (e.g. lowered lb and increased ub) are regarded as non-differential
+  # by default, mets="all" means performing the analysis across all metabolites; or specify metabolite indices; nc is the number of cores for paralleling across the metabolites
+  # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed metabolites when use.sample==TRUE
   if (use.sample) {
     if (is.null(sample.range)) {
       sr0 <- 1001:ncol(imat.model0$sampl$pnts)
@@ -392,8 +381,14 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
       sr0 <- sample.range[[1]]
       sr1 <- sample.range[[2]]
     }
-    samp0 <- apply(imat.model0$S[mets,], 1, function(x) Matrix::colSums(x[x>0]*imat.model0$sampl$pnts[x>0,,drop=FALSE]))
-    samp1 <- apply(imat.model1$S[mets,], 1, function(x) Matrix::colSums(x[x>0]*imat.model1$sampl$pnts[x>0,,drop=FALSE]))
+    samp0 <- sapply(rxns, function(x) {
+      i <- as.integer(names(x))
+      colSums(imat.model0$sampl$pnts[i,sr0]*x)
+    })
+    samp1 <- sapply(rxns, function(x) {
+      i <- as.integer(names(x))
+      colSums(imat.model1$sampl$pnts[i,sr1]*x)
+    })
     dflux.test <- function(s0, s1) {
       # run wilcox test
       tryCatch({
@@ -413,29 +408,106 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
         data.table(lb0=NA, ub0=NA, med0=NA, lb1=NA, ub1=NA, med1=NA, diff.med=NA, r=NA, pval=NA)
       })
     }
-    res <- rbindlist(mclapply(1:length(mets), function(i) dflux.test(samp0[sr0,i,drop=FALSE], samp1[sr1,i,drop=FALSE]), mc.cores=nc))
+    res <- rbindlist(mclapply(1:length(rxns), function(i) dflux.test(samp0[,i], samp1[,i]), mc.cores=nc))
     res[, padj:=p.adjust(pval, method="BH")]
-    res <- cbind(data.table(id=mets, met=imat.model0$mets[mets]), res)
-    res <- res[order(padj, pval, -abs(r), -abs(diff.med))]
-    # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
+    res <- cbind(data.table(id=ifelse(is.null(names(rxns)), 1:length(rxns), names(rxns))), res)
+    res <- res[order(-abs(diff.med), -abs(r), padj, pval)]
+    # add summary of flux differences: 1 means increased flux through the metabolite, vice versa; 0 means unchanged
     res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(diff.med)>quantile(abs(diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
   } else {
-    ids <- apply(imat.model0$S[mets,], 1, function(x) which(x>0))
-    coefs <- apply(imat.model0$S[mets,], 1, function(x) x[x>0])
-    ub0 <- unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc))
-    lb0 <- unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc))
-    ub1 <- unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc))
-    lb1 <- unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc))
+    ids <- lapply(rxns, function(x) as.integer(names(x)))
+    ub0 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc)))
+    lb0 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc)))
+    ub1 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc)))
+    lb1 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc)))
     Rcplex.close()
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
     dm <- m1-m0
-    res <- data.table(id=mets, rxn=imat.model0$mets[mets],
+    res <- data.table(id=ifelse(is.null(names(rxns)), 1:length(rxns), names(rxns)),
                       lb0=lb0, ub0=ub0, med0=m0,
                       lb1=lb1, ub1=ub1, med1=m1,
                       diff.med=dm)
     res <- res[order(-abs(diff.med))]
-    # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
+    # add summary of flux differences: positive value means increased flux through the metabolite, vice versa; 0 means unchanged
+    res[, dir:=ifelse(ub1>ub0 & lb1>lb0, 3,
+                      ifelse(ub1<ub0 & lb1<lb0, -3,
+                             ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
+                                    ifelse(ub1<ub0 & lb1==lb0 | ub1==ub0 & lb1<lb0, -2,     
+                                           ifelse(m1>m0, 1,
+                                                  ifelse(m1<m0, -1, 0))))))]
+  }
+}
+
+get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, sample.range=NULL, mets="all", nc=1L, padj.cutoff=0.01, r.cutoff=0.1, diff.med.cutoff=0.1) {
+    # do differential flux analysis for the flux through each metabolite (i.e. either the production or consumption, they should be the same in magnitude if S*v=0; below I am using the production flux): imat.model1 compared to imat.model0
+    # if use.sample, use the sampled flux distributions saved in the imat.models, by default, use 1001:end sample points; or specify range of sample points for model0 and model1 respectively in a list
+    # is use.sample==FALSE, then deterimine diff flux by obtaining the min and max fluxes through each metabolite for the two models, and regard metabolites with either increased lb or increased ub as upregulated and vice versa; ambiguous cases (e.g. lowered lb and increased ub) are regarded as non-differential
+    # by default, mets="all" means performing the analysis across all metabolites; or specify metabolite indices; nc is the number of cores for paralleling across the metabolites
+    # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed metabolites when use.sample==TRUE
+  if (mets=="all") mets <- 1:length(imat.model0$mets)
+  if (use.sample) {
+    if (is.null(sample.range)) {
+      sr0 <- 1001:ncol(imat.model0$sampl$pnts)
+      sr1 <- 1001:ncol(imat.model1$sampl$pnts)
+    } else {
+      sr0 <- sample.range[[1]]
+      sr1 <- sample.range[[2]]
+    }
+    samp0 <- apply(imat.model0$S[mets,,drop=FALSE], 1, function(x) {
+      tmp <- imat.model0$sampl$pnts[,sr0]*x
+      apply(tmp, 2, function(y) sum(y[y>0]))
+    })
+    samp1 <- apply(imat.model1$S[mets,,drop=FALSE], 1, function(x) {
+      tmp <- imat.model1$sampl$pnts[,sr1]*x
+      apply(tmp, 2, function(y) sum(y[y>0]))
+    })
+    dflux.test <- function(s0, s1) {
+      # run wilcox test
+      tryCatch({
+        wilcox.res <- wilcox.test(s0, s1)
+        # p value
+        wilcox.p <- wilcox.res$p.value
+        # effect size for unpaired test: rank biserial correlation
+        wilcox.r <- unname(1 - 2 * wilcox.res$statistic / (length(s0)*length(s1)))
+        # another effect size measure: difference of median fluxes
+        m0 <- median(s0)
+        m1 <- median(s1)
+        dm <- m1-m0
+        data.table(lb0=min(s0), ub0=max(s0), med0=m0,
+                   lb1=min(s1), ub1=max(s1), med1=m1,
+                   diff.med=dm, r=wilcox.r, pval=wilcox.p)
+      }, error=function(e) {
+        data.table(lb0=NA, ub0=NA, med0=NA, lb1=NA, ub1=NA, med1=NA, diff.med=NA, r=NA, pval=NA)
+      })
+    }
+    res <- rbindlist(mclapply(1:length(mets), function(i) dflux.test(samp0[,i], samp1[,i]), mc.cores=nc))
+    res[, padj:=p.adjust(pval, method="BH")]
+    res <- cbind(data.table(id=mets, met=imat.model0$mets[mets]), res)
+    res <- res[order(-abs(diff.med), -abs(r), padj, pval)]
+    # add summary of flux differences: 1 means increased flux through the metabolite, vice versa; 0 means unchanged
+    res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(diff.med)>quantile(abs(diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
+  } else {
+    # here there is a problem... I won't be able to know which reactions to use to represent the flux through a metabolite in the cases involving multiple reversible reactions, e.g. (1) x->y, (2) z<=>x, (3) x<=>, here for x the fluxes will sum to 0 if S*v=0, but to represent the flux through x, in general I don't know whether I should use (1)-(2) or (1)+(3) or just (1), so I omit these cases
+    tmp <- apply(imat.model0$S[mets,], 1, function(x) sum(model$lb[x!=0]<0)>1)
+    if (any(tmp)) warning("Cannot decide the flux through some of the metabolites, these metabolites are omitted.\n")
+    mets <- mets[!tmp]
+    ids <- apply(imat.model0$S[mets,], 1, function(x) which(x>0))
+    coefs <- apply(imat.model0$S[mets,], 1, function(x) x[x>0])
+    ub0 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc)))
+    lb0 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc)))
+    ub1 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc)))
+    lb1 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc)))
+    Rcplex.close()
+    m0 <- (ub0+lb0)/2
+    m1 <- (ub1+lb1)/2
+    dm <- m1-m0
+    res <- data.table(id=mets, met=imat.model0$mets[mets],
+                      lb0=lb0, ub0=ub0, med0=m0,
+                      lb1=lb1, ub1=ub1, med1=m1,
+                      diff.med=dm)
+    res <- res[order(-abs(diff.med))]
+    # add summary of flux differences: positive value means increased flux through the metabolite, vice versa; 0 means unchanged
     res[, dir:=ifelse(ub1>ub0 & lb1>lb0, 3,
                ifelse(ub1<ub0 & lb1<lb0, -3,
                ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
