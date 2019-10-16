@@ -290,7 +290,7 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
   # by default, rxns="all" means performing the analysis across all reactions; or specify reaction indices; nc is the number of cores for paralleling across the reactions
   # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed reactions when use.sample==TRUE
 
-  if (rxns=="all") rxns <- 1:length(imat.model0$rxns)
+  if (length(rxns)==1 && rxns=="all") rxns <- 1:length(imat.model0$rxns)
   lb <- pmin(imat.model0$lb[rxns], imat.model1$lb[rxns])
   ub <- pmax(imat.model0$ub[rxns], imat.model1$ub[rxns])
   
@@ -346,8 +346,8 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
                ifelse(ub1<ub0 & lb1<lb0, -3,
                ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
                ifelse(ub1<ub0 & lb1==lb0 | ub1==ub0 & lb1<lb0, -2,     
-               ifelse(m1>m0, 1,
-               ifelse(m1<m0, -1, 0))))))]
+               ifelse(med1>med0, 1,
+               ifelse(med1<med0, -1, 0))))))]
   }
   
   res
@@ -431,11 +431,11 @@ get.diff.comb.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample
     res <- res[order(-abs(diff.med))]
     # add summary of flux differences: positive value means increased flux through the metabolite, vice versa; 0 means unchanged
     res[, dir:=ifelse(ub1>ub0 & lb1>lb0, 3,
-                      ifelse(ub1<ub0 & lb1<lb0, -3,
-                             ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
-                                    ifelse(ub1<ub0 & lb1==lb0 | ub1==ub0 & lb1<lb0, -2,     
-                                           ifelse(m1>m0, 1,
-                                                  ifelse(m1<m0, -1, 0))))))]
+               ifelse(ub1<ub0 & lb1<lb0, -3,
+               ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
+               ifelse(ub1<ub0 & lb1==lb0 | ub1==ub0 & lb1<lb0, -2,     
+               ifelse(med1>med0, 1,
+               ifelse(med1<med0, -1, 0))))))]
   }
 }
 
@@ -445,7 +445,7 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
     # is use.sample==FALSE, then deterimine diff flux by obtaining the min and max fluxes through each metabolite for the two models, and regard metabolites with either increased lb or increased ub as upregulated and vice versa; ambiguous cases (e.g. lowered lb and increased ub) are regarded as non-differential
     # by default, mets="all" means performing the analysis across all metabolites; or specify metabolite indices; nc is the number of cores for paralleling across the metabolites
     # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed metabolites when use.sample==TRUE
-  if (mets=="all") mets <- 1:length(imat.model0$mets)
+  if (length(mets)==1 && mets=="all") mets <- 1:length(imat.model0$mets)
   if (use.sample) {
     if (is.null(sample.range)) {
       sr0 <- 1001:ncol(imat.model0$sampl$pnts)
@@ -512,8 +512,8 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
                ifelse(ub1<ub0 & lb1<lb0, -3,
                ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
                ifelse(ub1<ub0 & lb1==lb0 | ub1==ub0 & lb1<lb0, -2,     
-               ifelse(m1>m0, 1,
-               ifelse(m1<m0, -1, 0))))))]
+               ifelse(med1>med0, 1,
+               ifelse(med1<med0, -1, 0))))))]
   }
 }
 
