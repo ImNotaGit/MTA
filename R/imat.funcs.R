@@ -4,10 +4,16 @@ library(Rcplex.my)
 # need to source utils.R
 # need to source sampling.funcs.R
 
+
+##### ----- parameters ----- #####
+
 imat.pars <- list(flux.act=1, flux.inact=0.1, flux.delta.rel=0, flux.delta=0.1, flux.bound=1000)
 milp.pars <- list(trace=1, nodesel=0, solnpoolagap=0, solnpoolgap=0, solnpoolintensity=2, n=1)
 sampl.pars <- list(n.warmup=5000, n.burnin=1000, n.sampl=2000, steps.per.pnt=400, ncores=1L)
 mep.pars <- list(beta=1e9, damp=0.9, max.iter=2000, dlb=1e-50, dub=1e50, epsil=1e-6, fix.flux=FALSE, fflux.id=0, fflux.mean=0, fflux.var=0)
+
+
+##### ----- different versions of iMAT ----- #####
 
 imat <- function(model, expr, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
   
@@ -61,7 +67,7 @@ imatx <- function(model, expr, dflux, imat.params=imat.pars, milp.params=milp.pa
 
   # formulate iMAT model
   imat.model <- form.imat(model, expr, imat.params)
-  form.imat.xde(imat.model, dflux, imat.params) # modify imat.model in place
+  imat.model <- form.imat.xde(imat.model, dflux, imat.params)
   
   # run the iMAT MILP
   run.imat(imat.model, milp.params) # modify imat.model in place
@@ -171,6 +177,9 @@ imat2steps <- function(model, expr1, expr2, dflux, imat.params=imat.pars, milp.p
   res.model
 }
 
+
+##### ----- helper functions for the individual internal steps of iMAT ----- #####
+
 form.imat <- function(model, expr, params) {
   # formulate the original iMAT model
   
@@ -214,8 +223,8 @@ form.imat <- function(model, expr, params) {
   
   # other parameters
   n <- n.act + n.act.rev + n.inact + n.inact.rev
-  rowlb <- c(model$rowlb, rep(-params$flux.bound, n)) # originally, it was c(model$b, ...)
-  rowub <- c(model$rowub, rep(params$flux.bound, n)) # originally, it was c(model$b, ...)
+  rowlb <- c(model$rowlb, rep(-params$flux.bound, n))
+  rowub <- c(model$rowub, rep(params$flux.bound, n))
   n <- ncol(S) - n.rxns
   c <- rep(c(0,1), c(n.rxns, n))
   vtype <- ifelse(c==1, "I", "C")
@@ -223,9 +232,9 @@ form.imat <- function(model, expr, params) {
   ub <- c(model$ub, rep(1, n))
   var.ind <- rep(c("v","y+","y-","y0"), c(n.rxns, n.act, n.act.rev, n.inact)) # iMAT variable type indicators (v: fluxex; y+/-/0: indicator variables)
   
-  # return iMAT model as an environment
+  # return iMAT model as an environment; set class as "imat.model" so later functions can identify imat models based on this (but currently not in the canonical S3 OOP way)
   res.model <- as.environment(list(irxn.ids=model$irxn.ids, # if not exist, will be NULL
-                      genes.int=expr, rxns.int.raw=rxns.int.raw, rxns.int=rxns.int,
+                      genes.int=expr, rxns.int=rxns.int,
                       rxns.act=rxns.act, rxns.act.rev=rxns.act.rev, rxns.inact=rxns.inact, rxns.inact.rev=rxns.inact.rev, var.ind=var.ind,
                       c=c, S=S, rowlb=rowlb, rowub=rowub, lb=lb, ub=ub, vtype=vtype))
   class(res.model) <- "imat.model"
@@ -273,8 +282,16 @@ form.imat.de0 <- function(model, i1, i2, df, rr, params) {
     if (df!=0) { # for now I haven't implemented df==0, so when df==0 should do nothing
       # (z+) + (z-) = 1
       S <- rbind(S, sparseMatrix(rep(1,2), c(ncol(S)-1, ncol(S)), dims=c(1,ncol(S))))
-      model$rowlb <- c(model$rowlb, c((params$flux.delta.rel-2)*params$flux.bound+params$flux.delta, (params$flux.delta.rel-2)*params$flux.bound, (params$flux.delta.rel-2)*params$flux.bound+params$flux.delta), 0)
-      model$rowub <- c(model$rowub, c((2-params$flux.delta.rel)*params$flux.bound, (2-params$flux.delta.rel)*params$flux.bound-params$flux.delta, (2-params$flux.delta.rel)*params$flux.bound), 1)
+      model$rowlb <- c(model$rowlb,
+                       c((params$flux.delta.rel-2)*params$flux.bound+params$flux.delta,
+                         (params$flux.delta.rel-2)*params$flux.bound,
+                         (params$flux.delta.rel-2)*params$flux.bound+params$flux.delta),
+                       0)
+      model$rowub <- c(model$rowub,
+                       c((2-params$flux.delta.rel)*params$flux.bound,
+                         (2-params$flux.delta.rel)*params$flux.bound-params$flux.delta,
+                         (2-params$flux.delta.rel)*params$flux.bound),
+                       1)
       model$lb <- c(model$lb, 0)
       model$ub <- c(model$ub, 1)
       model$c <- c(model$c, 1)
@@ -403,20 +420,23 @@ update.model.imat <- function(model, imat.res, sol=0, params) {
   
   xopt <- get.imat.xopt(imat.res, sol)
   
+  # the de part of the model
   if ("z+" %in% imat.res$var.ind) {
-    # extract the model from imat.res
+    # if imat.res is from a de model, then obtain the resulting model from imat.res
     # rows and cols to keep from imat.res$S: the "v" part and the z==1 part.
     tmp <- imat.res$S[, (imat.res$var.ind %in% c("z+","z-") & xopt==0) | imat.res$var.ind %in% c("y+","y-","y0")]
-    rind <- rowSums(tmp)==0
+    rind <- apply(tmp, 1, function(x) all(x==0))
     cind <- imat.res$var.ind=="v"
     x <- rowSums(imat.res$S[rind, imat.res$var.ind %in% c("z+","z-") & xopt==1])
     res.model <- as.environment(subset.model(imat.res, rind, cind))
     res.model$rowlb <- res.model$rowlb - x
     res.model$rowub <- res.model$rowub - x
   } else {
+    # if imat.res if not from a de model, then the resulting model will be based on model
     res.model <- as.environment(model)
   }
   
+  # the original imat part of the model
   if ("y+" %in% imat.res$var.ind || "y+_1" %in% imat.res$var.ind) {
     yp <- xopt[imat.res$var.ind %in% c("y+","y+_1","y+_2")]
     ym <- xopt[imat.res$var.ind %in% c("y-","y-_1","y-_2")]
@@ -432,9 +452,6 @@ update.model.imat <- function(model, imat.res, sol=0, params) {
     res.model$ub[bk] <- -params$flux.act
     res.model$ub[inact] <- params$flux.inact
     res.model$lb[inact.rev] <- -params$flux.inact
-    res.model$c <- rep(0, length(res.model$c))
-    res.model$vtype <- rep("C", length(res.model$c))
-    res.model$var.ind <- rep("v", length(res.model$c))
   }
   res.model
 }
