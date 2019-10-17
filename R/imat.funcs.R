@@ -81,12 +81,12 @@ imatx <- function(model, expr, dflux, imat.params=imat.pars, milp.params=milp.pa
   res.model
 }
 
-imatx2steps <- function(model, expr, dflux, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
+imatx2steps <- function(model, expr, dflux, imat.params=imat.pars, milp.params1=milp.pars, milp.params2=milp.pars, sampl.params=sampl.pars) {
   
   # formulate iMAT model step 1 (i.e. the original imat)
   imat.model1 <- form.imat(model, expr, imat.params)
   # run the iMAT MILP
-  run.imat(imat.model1, milp.params) # modify imat.model in place
+  run.imat(imat.model1, milp.params1) # modify imat.model in place
   
   # update the original metabolic model based on iMAT result
   imat.model2 <- update.model.imat(model, imat.model1, sol=0, imat.params)
@@ -94,7 +94,7 @@ imatx2steps <- function(model, expr, dflux, imat.params=imat.pars, milp.params=m
   imat.model2 <- form.imat.xde(imat.model2, dflux, imat.params)
   
   # run the iMAT MILP
-  run.imat(imat.model2, milp.params) # modify imat.model in place
+  run.imat(imat.model2, milp.params2) # modify imat.model in place
   
   # update the original metabolic model based on iMAT result
   res.model <- update.model.imat(model, imat.model2, sol=0, imat.params)
@@ -139,14 +139,14 @@ imat2 <- function(model, expr1, expr2, dflux, imat.params=imat.pars, milp.params
   res.model
 }
 
-imat2steps <- function(model, expr1, expr2, dflux, imat.params=imat.pars, milp.params=milp.pars, sampl.params=sampl.pars) {
+imat2steps <- function(model, expr1, expr2, dflux, imat.params=imat.pars, milp.params1=milp.pars, milp.params2=milp.pars, sampl.params=sampl.pars) {
   
   # formulate iMAT model step 1 (i.e. the original imat)
   imat.model1 <- form.imat(model, expr1, imat.params)
   imat.model2 <- form.imat(model, expr2, imat.params)
   # run the iMAT MILP
-  run.imat(imat.model1, milp.params) # modify imat.model in place
-  run.imat(imat.model2, milp.params) # modify imat.model in place
+  run.imat(imat.model1, milp.params1) # modify imat.model in place
+  run.imat(imat.model2, milp.params1) # modify imat.model in place
   # update the original metabolic model based on iMAT result
   model1 <- update.model.imat(model, imat.model1, sol=0, imat.params)
   model2 <- update.model.imat(model, imat.model2, sol=0, imat.params)
@@ -154,7 +154,7 @@ imat2steps <- function(model, expr1, expr2, dflux, imat.params=imat.pars, milp.p
   # formulate iMAT model step 2 (de) upon the updated model from the above step
   imat.model.de <- form.imat.de(model1, model2, dflux, imat.params)
   # run the iMAT MILP
-  run.imat(imat.model.de, milp.params) # modify imat.model in place
+  run.imat(imat.model.de, milp.params2) # modify imat.model in place
   
   # update model (model1+model2) based on iMAT result
   res.model <- update.model.imat(model, imat.model.de, sol=0, imat.params) # here model is actually not used
