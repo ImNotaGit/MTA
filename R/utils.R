@@ -424,8 +424,7 @@ get.diff.comb.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
     dm <- m1-m0
-    if (is.null(names(rxns))) id <- 1:length(rxns) else id <- names(rxns)
-    res <- data.table(id=id,
+    res <- data.table(id=1:length(rxns), rxn=names(rxns),
                       lb0=lb0, ub0=ub0, med0=m0,
                       lb1=lb1, ub1=ub1, med1=m1,
                       diff.med=dm)
