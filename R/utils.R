@@ -173,11 +173,12 @@ c.model <- function(model1, model2) {
   })
 }
 
-get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, nc=1L) {
+get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, nc=1L, na=FALSE) {
   # get the max or min flux of the i'th reaction in the model
   # `i` can also be a vector of multiple reaction indices, with coef being their coefficients, then the corresponding linear objective function will be optimized
   # to knockout reaction(s), pass KO as their indices
   # if keep.xopt, the optimal xopt vector will also be returned
+  # if na, then will return NA if solver status is not 1 (i.e. optimal), otherwise will keep the original value
   cvec <- rep(0, ncol(model$S))
   cvec[i] <- coef
   objsense <- dir
@@ -190,7 +191,13 @@ get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, 
   ub[ko] <- 0
   
   res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=10000, tilim=120, threads=nc))
-  if (res$status!=1) warning("Potential problems running LP. Solver status: ", res$status, ".\n")
+  if (res$status!=1) {
+    warning("Potential problems running LP. Solver status: ", res$status, ".\n")
+    if (na) {
+      res$obj <- NA
+      res$xopt <- NA
+    }
+  }
   if (keep.xopt) {
     return(list(obj=res$obj, xopt=res$xopt))
   } else return(res$obj)
