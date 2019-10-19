@@ -335,10 +335,10 @@ get.diff.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample.rang
     # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
     res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(diff.med)>quantile(abs(diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
   } else {
-    ub0 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model0, dir="max", mc.cores=nc))
-    lb0 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model0, dir="min", mc.cores=nc))
-    ub1 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model1, dir="max", mc.cores=nc))
-    lb1 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model1, dir="min", mc.cores=nc))
+    ub0 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model0, dir="max", mc.cores=nc, na=TRUE))
+    lb0 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model0, dir="min", mc.cores=nc, na=TRUE))
+    ub1 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model1, dir="max", mc.cores=nc, na=TRUE))
+    lb1 <- unlist(mclapply(rxns, get.opt.flux, model=imat.model1, dir="min", mc.cores=nc, na=TRUE))
     Rcplex.close()
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
@@ -423,10 +423,10 @@ get.diff.comb.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample
     res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(diff.med)>quantile(abs(diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
   } else {
     ids <- lapply(rxns, function(x) as.integer(names(x)))
-    ub0 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc)))
-    lb0 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc)))
-    ub1 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc)))
-    lb1 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc)))
+    ub0 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc, na=TRUE)))
+    lb0 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc, na=TRUE)))
+    ub1 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc, na=TRUE)))
+    lb1 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc, na=TRUE)))
     Rcplex.close()
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
@@ -501,10 +501,10 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
     mets <- mets[!tmp]
     ids <- apply(imat.model0$S[mets,], 1, function(x) which(x>0))
     coefs <- apply(imat.model0$S[mets,], 1, function(x) x[x>0])
-    ub0 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc)))
-    lb0 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc)))
-    ub1 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc)))
-    lb1 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc)))
+    ub0 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc, na=TRUE)))
+    lb0 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc, na=TRUE)))
+    ub1 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc, na=TRUE)))
+    lb1 <- abs(unlist(mcmapply(get.opt.flux, ids, coefs, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc, na=TRUE)))
     Rcplex.close()
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
