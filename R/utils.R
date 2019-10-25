@@ -419,14 +419,14 @@ get.diff.comb.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample
     res[, padj:=p.adjust(pval, method="BH")]
     res <- cbind(data.table(id=ifelse(is.null(names(rxns)), 1:length(rxns), names(rxns))), res)
     res <- res[order(-abs(diff.med), -abs(r), padj, pval)]
-    # add summary of flux differences: 1 means increased flux through the metabolite, vice versa; 0 means unchanged
+    # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
     res[, dir:=ifelse(!(padj<padj.cutoff & abs(r)>quantile(abs(r), r.cutoff, na.rm=TRUE) & abs(diff.med)>quantile(abs(diff.med), diff.med.cutoff, na.rm=TRUE)), 0, ifelse(r>0, 1, -1))]
   } else {
     ids <- lapply(rxns, function(x) as.integer(names(x)))
-    ub0 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc, na=TRUE)))
-    lb0 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc, na=TRUE)))
-    ub1 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc, na=TRUE)))
-    lb1 <- abs(unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc, na=TRUE)))
+    ub0 <- unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="max"), mc.cores=nc, na=TRUE))
+    lb0 <- unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model0, dir="min"), mc.cores=nc, na=TRUE))
+    ub1 <- unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="max"), mc.cores=nc, na=TRUE))
+    lb1 <- unlist(mcmapply(get.opt.flux, ids, rxns, MoreArgs=list(model=imat.model1, dir="min"), mc.cores=nc, na=TRUE))
     Rcplex.close()
     m0 <- (ub0+lb0)/2
     m1 <- (ub1+lb1)/2
@@ -436,7 +436,7 @@ get.diff.comb.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample
                       lb1=lb1, ub1=ub1, med1=m1,
                       diff.med=dm)
     res <- res[order(-abs(diff.med))]
-    # add summary of flux differences: positive value means increased flux through the metabolite, vice versa; 0 means unchanged
+    # add summary of flux differences: positive value means flux value changes towards the positive side, vice versa; 0 means unchanged
     res[, dir:=ifelse(ub1>ub0 & lb1>lb0, 3,
                ifelse(ub1<ub0 & lb1<lb0, -3,
                ifelse(ub1>ub0 & lb1==lb0 | ub1==ub0 & lb1>lb0, 2,
