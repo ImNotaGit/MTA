@@ -6,6 +6,7 @@ library(sybilSBML)
 
 ### ---- Recon 1 ----
 
+# this file is from Noam, probably contains an old version of the model
 tmp <- readMat("../models/recon.mat")
 
 # tmp[[1]] contains the model but as an array, each element of the array being a field of the MATLAB struct... so need to use apply
@@ -34,6 +35,12 @@ recon1$genes <- recon1$genes.unique.names[recon1$genes.unique.map]
 recon1$genes.unique <- NULL
 recon1$genes.unique.map <- NULL
 recon1$genes.unique.names <- NULL
+# 2019.11.12: I find that there are some non-standard gene symbols (maybe outdated symbols?), e.g. ASS1 gene is written as "ASS", so I recreated gene symbols from gene ids
+gid <- str_split(recon1$gene.ids, "\\.", simplify=TRUE)[,1]
+library("org.Hs.eg.db")
+mapp <- select(org.Hs.eg.db, keys=gid, columns=c("ENTREZID","SYMBOL"), keytype="ENTREZID") # many:1 mapping (with NA's)
+all(gid==mapp$ENTREZID) # TRUE
+recon1$genes <- ifelse(is.na(mapp$SYMBOL), recon1$gene.ids, mapp$SYMBOL)
 
 # format the "rules" field
 recon1$rules <- unname(sapply(recon1$rules, function(x) {
@@ -45,6 +52,58 @@ recon1$rules <- unname(sapply(recon1$rules, function(x) {
 recon1$description <- "Recon 1"
 
 save(recon1, file="Recon1.RData")
+
+
+# this is another version of recon 1, downloaded from BiGG (2019.11.12)
+tmp <- readMat("../models/BiGG/RECON1.mat")
+
+# tmp[[1]] contains the model but as an array, each element of the array being a field of the MATLAB struct... so need to use apply
+# for some weird reason each element of the array is a deeply nested list, so use rlist::list.flatten to make each of them a simple list of only one level
+# cannot use unlist here because it can flattern things directly to vectors and discarding NULLs/empty values.
+recon1 <- apply(tmp[[1]], 1, function(x) list.flatten(x))
+# then manually unlist each of the simple lists, so that NULLs/empty values are not lost
+recon1 <- lapply(recon1, function(x) {
+  # if of length 1, just extract x[[1]], simplify to vector when appropriate
+  if (length(x)==1) {
+    res <- x[[1]]
+    if (is.matrix(res) && (nrow(res)==1 || ncol(res)==1)) res <- as.vector(res)
+  } else { # if length >1, carefully unlist into a vector so that NULLs/empty values are not lost
+    res <- unname(sapply(x, function(y) {
+      y <- as.vector(y) # y can be a (single-element or empty) matrix/array, so as.vector
+      if (length(y)==0 || is.null(y) || y=="") y <- NA
+      y
+    }))
+  }
+  return(res)
+})
+
+# gene symbols
+recon1$gene.ids <- recon1$genes
+gid <- str_split(recon1$gene.ids, "_", simplify=TRUE)[,1]
+library("org.Hs.eg.db")
+mapp <- select(org.Hs.eg.db, keys=gid, columns=c("ENTREZID","SYMBOL"), keytype="ENTREZID") # many:1 mapping (with NA's)
+all(gid==mapp$ENTREZID) # TRUE
+recon1$genes <- ifelse(is.na(mapp$SYMBOL), recon1$gene.ids, mapp$SYMBOL)
+
+# rules mapping genes to reactions
+rules <- sapply(recon1$grRules, function(x) {
+  if (is.na(x)) {
+    x <- "0"
+  } else {
+    x <- str_replace_all(x, "[0-9]+_AT[0-9]+", function(x) paste0("x[", match(x, recon1$gene.ids), "]"))
+    x <- str_replace_all(x, "and", "&")
+    x <- str_replace_all(x, "or", "\\|")
+  }
+  x
+})
+recon1$rules <- unname(rules)
+recon1$rowlb <- recon1$b # all 0
+recon1$rowub <- recon1$b # all 0
+recon1$S <- Matrix(recon1$S, sparse=TRUE)
+recon1$lb[recon1$lb==-999999] <- -1000
+recon1$ub[recon1$ub==999999] <- 1000
+
+save(recon1, file="Recon1.BiGG.20191112.RData")
 
 
 ### ---- Recon 2.2 ----
