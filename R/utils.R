@@ -52,7 +52,7 @@ rxns2genes <- function(vec, model) {
   res
 }
 
-genes2rxns <- function(genes, type=0, model) {
+genes2rxns <- function(genes, model, type=0) {
   # given a vector of gene symbols, for each of them map to reactions (rxn indeces in the model), return as a list
   # type==0 for any reactions involving the gene; type==1 for reactions where the gene is essential (corresponding to that if the gene level is low, then the reaction flux should be low)
   if (type==0) {
@@ -84,7 +84,7 @@ mets2rxns <- function(vec, model) {
   res
 }
 
-get.rxn.equation <- function(vec, model) {
+get.rxn.equations <- function(vec, model) {
   # given a numerical vector corresponding to the reaction indeces in the model, return string vector containing the equations of the corresponding reactions
   sapply(vec, function(i) {
     x <- model$S[, i]
@@ -95,39 +95,111 @@ get.rxn.equation <- function(vec, model) {
   })
 }
 
-get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
-  # given the IDs of a set of rxns or mets (specified by type), return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn.
+s2igraph <- function(model, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
+  # create an igraph bipartite graph from the model S matrix (directed graph, unweighted)
   # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
   # exclude.mets.degree: exclude metabolites with degree greater than this
-  # exclude.mets are IDs (indices) of other mets to be excluded
+  # exclude.mets are the IDs (as in model$mets) of other mets to be excluded
   
-  library(igraph)
-  s <- model$S
+  s <- as.matrix(model$S) # convert to "dense" matrix, since the igraph::graph_from_incidence_matrix function contains bugs working with sparse matrix
   # exclude metabolites
-  tmp <- graph.incidence(s)
-  tmp <- bipartite.projection(tmp, which="false") # projected network of metabolites
-  deg <- igraph::degree(tmp) # make sure use degree from igraph
+  exclude.mets <- match(exclude.mets, model$mets)
+  tmp <- igraph::graph_from_incidence_matrix(s)
+  tmp <- igraph::bipartite_projection(tmp, which="false") # projected network of metabolites
+  deg <- igraph::degree(tmp)
   exclude.mets <- c(exclude.mets, which(deg>exclude.mets.degree))
   if (!(is.null(exclude.mets.default) || exclude.mets.default=="")) {
     emd <- grep(exclude.mets.default, model$mets)
     exclude.mets <- unique(c(exclude.mets, emd))
   }
-  cat("The following metabolites are excluded:\n")
-  cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
   s[exclude.mets, ] <- 0
-  # create bipartite graph between mets and rxns
-  gb <- graph.incidence(s)
+  rownames(s) <- model$mets
+  colnames(s) <- model$rxns
+  # print a message about the removed metabolites
+  exclude.mets <- model$mets[exclude.mets]
+  exclude.mets <- unique(str_replace(exclude.mets, "[\\[_].\\]?$", ""))
+  message("The following metabolites are excluded:")
+  message(paste(exclude.mets, collapse=", "))
+  
+  # create directed bipartite graph between mets and rxns
+  # reversible reactions: bi-directional edges
+  tmp <- s
+  tmp[, model$lb>=0] <- 0
+  tmp <- abs(tmp)
+  g0 <- igraph::graph_from_incidence_matrix(tmp, directed=TRUE, mode="all")
+  # non-reversible reactions: one-way edges
+  ## edges from rxns to the product mets
+  tmp <- s
+  tmp[, model$lb<0] <- 0
+  tmp[tmp<0] <- 0
+  g1 <- igraph::graph_from_incidence_matrix(tmp, directed=TRUE, mode="in")
+  ## edges from the reactant mets to rxns
+  tmp <- s
+  tmp[, model$lb<0] <- 0
+  tmp[tmp>0] <- 0
+  tmp <- -tmp
+  g2 <- igraph::graph_from_incidence_matrix(tmp, directed=TRUE, mode="out")
+  # combined graph (will be bipartite)
+  g <- igraph::union(g0, g1, g2)
+  # fix the node type attributes
+  `%nna%` <- function(a, b) ifelse(is.na(a), b, a)
+  igraph::V(g)$type <- igraph::V(g)$type_1 %nna% igraph::V(g)$type_2 %nna% igraph::V(g)$type_3
+  g <- igraph::delete_vertex_attr(g, "type_1")
+  g <- igraph::delete_vertex_attr(g, "type_2")
+  g <- igraph::delete_vertex_attr(g, "type_3")
+}
+
+get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
+  # given the IDs (as in model$rxns or model$mets) of a set of rxns or mets (specified by type), return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn.
+  # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
+  # exclude.mets.degree: exclude metabolites with degree greater than this
+  # exclude.mets are the IDs (as in model$mets) of other mets to be excluded
+  
+  gb <- s2igraph(model, exclude.mets.default, exclude.mets.degree, exclude.mets)
+  
   if (type=="rxn") {
     # project bipartite graph into the graph of rxns
-    gp <- bipartite.projection(gb, which="true")
+    gp <- igraph::bipartite_projection(gb, which="true")
   } else if (type=="met") {
     # project bipartite graph into the graph of mets
-    gp <- bipartite.projection(gb, which="false")
+    gp <- igraph::bipartite_projection(gb, which="false")
   }
   # get the neighborhood
-  res <- lapply(ego(gp, order=order, nodes=ids), as.vector)
+  res <- lapply(igraph::ego(gp, order=order, nodes=ids), names)
   names(res) <- ids
   res
+}
+
+get.path <- function(model, from, to, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
+  # print the shortest (directed) path(s) between a pair of metabolites or reactions, given as IDs as in model$mets or model$rxns. The path(s) will contain both reactions and metabolites along the way.
+  # will also return a list of shortest paths, each element per path being also a list with $path containing a vector of the entire path, $mets containing the path containing only mets, and $rxns containing the path containing only rxns 
+  # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
+  # exclude.mets.degree: exclude metabolites with degree greater than this
+  # exclude.mets are the IDs (as in model$S) of other mets to be excluded
+  
+  gb <- s2igraph(model, exclude.mets.default, exclude.mets.degree, exclude.mets)
+  tmp <- igraph::all_shortest_paths(gb, from, to, mode="out", weights=NA)
+  
+  tmp <- lapply(tmp$res, function(x) {
+    x <- names(x)
+    xx <- x
+    # format and print results
+    if (x[1] %in% model$mets) {
+      mets <- x[seq(1, length(x), 2)]
+      rxns <- x[seq(2, length(x), 2)]
+      xx[seq(2, length(xx), 2)] <- paste0("--(", xx[seq(2, length(xx), 2)], ")->")
+    } else if (x[1] %in% model$rxns) {
+      rxns <- x[seq(1, length(x), 2)]
+      mets <- x[seq(2, length(x), 2)]
+      xx[seq(1, length(xx), 2)] <- paste0("--(", xx[seq(1, length(xx), 2)], ")->")
+    }
+    xx <- paste(xx, collapse=" ")
+    list(prt=xx, path=x, mets=mets, rxns=rxns)
+  })
+  # print result
+  print(sapply(tmp, function(x) x$prt))
+  # return silently
+  res <- lapply(tmp, function(x) x[c("path", "mets", "rxns")])
 }
 
 subset.model <- function(model, i, j) {
@@ -551,7 +623,7 @@ check.diff.flux.of.met <- function(dflux.res, met.ids, model) {
   })
 }
 
-get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?") {
+get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$") {
   # from the result of differential flux analysis with get.diff.flux, identify all the subnetworks (of >2 reactions) with a consistent direction of flux difference (i.e. all increase or all decrease).
   # dflux.cutoff: used to determine the reactions with differential fluxes
   # exclude.mets: regex of some high degree metabolites to be excluded; the regex works for mets formats like "h[c]" and "h_c"
@@ -590,7 +662,7 @@ get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets=
   subn
 }
 
-get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^co2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?") {
+get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^co2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$") {
   # from the result of differential flux analysis with get.diff.flux, identify the flux differences of different directions (i.e. include both increase and decrease) associated with "branching point" metabolites (i.e. metabolites involved in >= 3 reactions): these cases reflect the metabolic flux diversion between two conditions.
   # dflux.cutoff: used to determine the reactions with differential fluxes
   # exclude.mets: regex of some high degree metabolites to be excluded; the regex works for mets formats like "h[c]" and "h_c"
@@ -619,7 +691,7 @@ get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^
   res
 }
 
-subsystems2gsets <- function(model, by=c("rxn","met"), exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", exclude.mets.degree=nrow(model$S), name="subSystems") {
+subsystems2gsets <- function(model, by=c("rxn","met"), exclude.mets="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), name="subSystems") {
   # create a list of reaction or metabolite ("by") sets from the "subSystems" field of a metabolic model
   # if by metabolite, exclude.mets are the regex of high-degree mets to exclude, also can set degree cutoff with exclude.mets.degree (metabolites with degree higher than this will be excluded); the union of these two will be excluded
   by <- match.arg(by)
@@ -659,7 +731,7 @@ pathway.gsea <- function(dflux.res, pathways, value.name="r", id.name="id") {
 
 #### ---- visualization ----
 
-plot.model <- function(model, rxn.ids, fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0, length(rxn.ids)), met.ids=1:length(model$mets), exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", dup.mets=exclude.mets, use.flux=c("dflux","flux"), use=c("both","color","width"), cols=c("green4","grey","red3"), sizes=c(0.5,5), layout=c("neato","fdp","dot","circo","twopi"), margins=c(150,150,150,150)) {
+plot.model <- function(model, rxn.ids, fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0, length(rxn.ids)), met.ids=1:length(model$mets), exclude.mets="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", dup.mets=exclude.mets, use.flux=c("dflux","flux"), use=c("both","color","width"), cols=c("green4","grey","red3"), sizes=c(0.5,5), layout=c("neato","fdp","dot","circo","twopi"), margins=c(150,150,150,150)) {
   # model: the base metabolic model
   # rxn.ids: IDs of the reactions to plot
   # fluxes: the flux values corresponding to the reactions in rxn.ids
@@ -800,7 +872,7 @@ plot.model <- function(model, rxn.ids, fluxes=rep(1, length(rxn.ids)), dfluxes=r
   #return(my.graph)
 }
 
-check.mets.plot <- function(model, fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0, length(rxn.ids)), met.ids=1:length(model$mets), exclude.mets="^h[[_].\\]?|^oh1[[_].\\]?|^h2o[[_].\\]?|^atp[[_].\\]?|^adp[[_].\\]?|^pi[[_].\\]?|^ppi[[_].\\]?|^coa[[_].\\]?|^o2[[_].\\]?|^co2[[_].\\]?|^nadp[[_].\\]?|^nadph[[_].\\]?|^nad[[_].\\]?|^nadh[[_].\\]?|^fad[[_].\\]?|^fadh2[[_].\\]?|^na1[[_].\\]?|^so4[[_].\\]?|^nh4[[_].\\]?|^cl[[_].\\]?", dup.mets=exclude.mets, use.flux=c("dflux","flux"), use=c("both","color","width"), cols=c("green4","grey","red3"), sizes=c(0.5,5), layout=c("neato","fdp","dot","circo","twopi")) {
+check.mets.plot <- function(model, fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0, length(rxn.ids)), met.ids=1:length(model$mets), exclude.mets="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", dup.mets=exclude.mets, use.flux=c("dflux","flux"), use=c("both","color","width"), cols=c("green4","grey","red3"), sizes=c(0.5,5), layout=c("neato","fdp","dot","circo","twopi")) {
   
   library(visNetwork)
   
