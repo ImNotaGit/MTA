@@ -191,35 +191,45 @@ form.imat <- function(model, expr, params) {
   
   n.mets <- nrow(model$S)
   n.rxns <- ncol(model$S)
+  S <- model$S
   
   # 1. Active reactions: specify the y+ indicator variables, representing activation in the forward direction (i.e. v>flux.act)
   rxns.act <- which(rxns.int==1)
   n.act <- length(rxns.act)
-  m1 <- sparseMatrix(1:n.act, rxns.act, dims=c(n.act, n.rxns))
-  m2 <- Diagonal(n.act, x=(-params$flux.act-params$flux.bound))
-  S <- rbind(cbind(model$S, sparseMatrix(NULL, NULL, dims=c(n.mets, n.act))), cbind(m1, m2))
+  if (n.act!=0) {
+    m1 <- sparseMatrix(1:n.act, rxns.act, dims=c(n.act, n.rxns))
+    m2 <- Diagonal(n.act, x=(-params$flux.act-params$flux.bound))
+    S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(n.mets, n.act))), cbind(m1, m2))
+  }
   
   # 2. Reversible active reactions: for those reversible ones among the active reactions, specify the extra y- indicator variables, representing activation in the backward direction (i.e. v<-flux.act)
   # thus, an reversible active reaction has both the y+ and y- indicator variables, because it can be active in either direction (but never both, i.e. 1 XOR 2)
   rxns.act.rev <- which(rxns.int==1 & model$lb<0)
   n.act.rev <- length(rxns.act.rev)
-  m1 <- sparseMatrix(1:n.act.rev, rxns.act.rev, dims=c(n.act.rev, ncol(S)))
-  m2 <- Diagonal(n.act.rev, x=params$flux.act+params$flux.bound)
-  S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(nrow(S), n.act.rev))), cbind(m1, m2))
+  if (n.act.rev!=0) {
+    m1 <- sparseMatrix(1:n.act.rev, rxns.act.rev, dims=c(n.act.rev, ncol(S)))
+    m2 <- Diagonal(n.act.rev, x=params$flux.act+params$flux.bound)
+    S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(nrow(S), n.act.rev))), cbind(m1, m2))
+  }
   
   # 3. Inactive reactions: specify the y0 indicator variables
   # 3a. specify inactivation in the forward direction (i.e. v<flux.inact)
   rxns.inact <- which(rxns.int==-1)
   n.inact <- length(rxns.inact)
-  m1 <- sparseMatrix(1:n.inact, rxns.inact, dims=c(n.inact, ncol(S)))
-  m2 <- Diagonal(n.inact, x=params$flux.bound-params$flux.inact)
+  if (n.inact!=0) {
+    m1 <- sparseMatrix(1:n.inact, rxns.inact, dims=c(n.inact, ncol(S)))
+    m2 <- Diagonal(n.inact, x=params$flux.bound-params$flux.inact)
+    S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(nrow(S), n.inact))), cbind(m1, m2))
+  }
   # 3b. for those reversible inactive reactions, need to further specify inactivation in the backward direction (i.e. v>-flux.inact)
   # note that a reversible inactive reaction has only one y0 indicator variable, because for these reactions we want -flux.inact<v<flux.inact (3a AND 3b) 
   rxns.inact.rev <- which(rxns.int==-1 & model$lb<0)
   n.inact.rev <- length(rxns.inact.rev)
-  m3 <- sparseMatrix(1:n.inact.rev, rxns.inact.rev, dims=c(n.inact.rev, ncol(S)))
-  m4 <- sparseMatrix(1:n.inact.rev, match(rxns.inact.rev, rxns.inact), x=params$flux.inact-params$flux.bound, dims=c(n.inact.rev, n.inact))
-  S <- rbind(cbind(S, sparseMatrix(NULL, NULL, dims=c(nrow(S), n.inact))), cbind(m1, m2), cbind(m3, m4))
+  if (n.inact.rev!=0) {
+    m3 <- sparseMatrix(1:n.inact.rev, rxns.inact.rev, dims=c(n.inact.rev, ncol(S)))
+    m4 <- sparseMatrix(1:n.inact.rev, match(rxns.inact.rev, rxns.inact), x=params$flux.inact-params$flux.bound, dims=c(n.inact.rev, n.inact))
+    S <- rbind(S, cbind(m3, m4))
+  }
   
   # other parameters
   n <- n.act + n.act.rev + n.inact + n.inact.rev
