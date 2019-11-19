@@ -226,7 +226,7 @@ form.imat <- function(model, expr, params) {
   rxns.inact.rev <- which(rxns.int==-1 & model$lb<0)
   n.inact.rev <- length(rxns.inact.rev)
   if (n.inact.rev!=0) {
-    m3 <- sparseMatrix(1:n.inact.rev, rxns.inact.rev, dims=c(n.inact.rev, ncol(S)))
+    m3 <- sparseMatrix(1:n.inact.rev, rxns.inact.rev, dims=c(n.inact.rev, ncol(S)-n.inact))
     m4 <- sparseMatrix(1:n.inact.rev, match(rxns.inact.rev, rxns.inact), x=params$flux.inact-params$flux.bound, dims=c(n.inact.rev, n.inact))
     S <- rbind(S, cbind(m3, m4))
   }
