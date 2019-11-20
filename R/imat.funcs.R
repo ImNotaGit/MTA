@@ -444,6 +444,7 @@ update.model.imat <- function(model, imat.res, sol=0, params) {
   } else {
     # if imat.res if not from a de model, then the resulting model will be based on model
     res.model <- as.environment(model)
+    res.model$milp.out <- imat.res$milp.out # add the milp output
   }
   
   # the original imat part of the model
