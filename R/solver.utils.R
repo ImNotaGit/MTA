@@ -67,8 +67,8 @@ CPX_STAT_CODE = c(
   `132`="CPXMIP_DETTIME_LIM_INFEAS"
 )
 
-rcplex <- function(cvec, Amat, bvec, Qmat=NULL, lb=0, ub=Inf, control=list(), objsense=c("min", "max"), sense="L", vtype=NULL, n=1) {
-  res <- Rcplex(cvec, Amat, bvec, Qmat, lb, ub, control, objsense, sense, vtype, n)
+rcplex <- function(cvec, Amat, bvec, Qmat=NULL, lb=0, ub=Inf, x0=NULL, control=list(), objsense=c("min", "max"), sense="L", vtype=NULL, n=1) {
+  res <- Rcplex(cvec, Amat, bvec, Qmat, lb, ub, x0, control, objsense, sense, vtype, n)
   
   tmpf <- function(x) {
     res <- x[c("xopt", "obj")]
