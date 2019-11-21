@@ -170,6 +170,10 @@ recon3d <- lapply(recon3d, function(x) {
   return(res)
 })
 
+# add rowlb and rowub
+recon3d$rowlb <- recon3d$b
+recon3d$rowub <- recon3d$b
+
 # gene symbols
 recon3d$gene.ids <- recon3d$genes
 gid <- str_split(recon3d$gene.ids, "\\.", simplify=TRUE)[,1]
