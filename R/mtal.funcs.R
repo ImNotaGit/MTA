@@ -85,13 +85,6 @@ run.mtal <- function(model, del, detail, params, nc) {
   res <- rbindlist(res, idcol="del.rxn")
   res[, del.rxn:=as.integer(del.rxn)]
 
-  # give a summary here of (potential) optimization issues if any
-  e <- res[solv.stat!="1", .(del.rxn, solv.stat)]
-  if (nrow(e)>0) {
-    cat("MTA: Potential problem or failed running LP for the case(s) below:\n")
-    print(e)
-  }
-  
   #res <- rbind(res[del.rxn==0], res[del.rxn!=0][order(-score.mta)])
   res
 }
@@ -109,8 +102,8 @@ run.lp <- function(model, del, x0, params) {
   
   tryCatch(
     {
-      res <- Rcplex(cvec=cvec, objsense="min", Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, x0=x0, control=params)
-      list(xopt=res$xopt, obj=ifelse(is.na(res$obj), sum(model$c*res$xopt, na.rm=TRUE), res$obj), status=as.character(res$status))
+      res <- rcplex(cvec=cvec, objsense="min", Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, x0=x0, control=params)[[1]]
+      list(xopt=res$xopt, obj=ifelse(is.na(res$obj), sum(model$c*res$xopt, na.rm=TRUE), res$obj), status=res$stat.str)
     },
     error=function(e) list(xopt=NA, obj=NA, status=as.character(e))
   )

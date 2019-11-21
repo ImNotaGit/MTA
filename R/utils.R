@@ -262,13 +262,10 @@ get.opt.flux <- function(model, i, coef=1, dir="max", ko=NULL, keep.xopt=FALSE, 
   lb[ko] <- 0
   ub[ko] <- 0
   
-  res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=10000, tilim=120, threads=nc))
-  if (res$status!=1) {
-    warning("Potential problems running LP. Solver status: ", res$status, ".\n")
-    if (na) {
+  res <- rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=10000, tilim=120, threads=nc))
+  if (res$stat!=1 && na) {
       res$obj <- NA
       res$xopt <- NA
-    }
   }
   if (keep.xopt) {
     return(list(obj=res$obj, xopt=res$xopt))

@@ -95,28 +95,21 @@ run.miqp <- function(model, del, params) {
     params$n <- NULL
   } else n <- 1
   
-  tryCatch(
-    {
-      res <- Rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=n)
-
-      if (n==1) res <- list(res)
-      res <- lapply(res, function(x) x[c("xopt","obj","status")])
-      stats <- sapply(res, function(x) x$status)
-      stats <- unique(stats[!stats %in% c(101,102,129,130)])
-      if (length(stats)>0) warning("MTA: Potential problem running MIQP for del=", del, ". Solver status: ", paste(stats, collapse=", "), ".\n")
-      res
-    },
+  tryCatch(rcplex(cvec=cvec, Qmat=Qmat, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=n),
     error=function(e) {
       warning("MTA: Failed running MIQP for del=", del, ". Message: ", e, "NA returned.\n")
-      list(list(xopt=NA, obj=NA, status=NA))
+      list(list(xopt=NA, obj=NA, stat=NA, stat.str=NA))
+    },
+    warning=function(w) {
+      warning("MTA: MIQP warning for del=", del, ". Message: ", w)
     }
   )
 }
 
 analyz.mta.res <- function(model, miqp.res) {
   
-  #miqp.res <- miqp.res[sapply(miqp.res, function(x) !is.na(x$status) && x$status %in% c(101,102,129,130))]
-  miqp.res <- miqp.res[sapply(miqp.res, function(x) !is.na(x$status))]
+  #miqp.res <- miqp.res[sapply(miqp.res, function(x) !is.na(x$stat) && x$stat %in% c(101,102,129,130))]
+  miqp.res <- miqp.res[sapply(miqp.res, function(x) !is.na(x$stat))]
   if (length(miqp.res)==0) {
     return(data.table(solv.stat=NA, obj.opt=NA, v.opt=NA, int.opt=NA, rxns.change.yes=NA, rxns.change.no=NA, rxns.change.overdo=NA, advs.change.yes=NA, advs.change.no=NA, advs.change.overdo=NA, advs.steady=NA, score.change=NA, score.steady=NA, score.mta=NA, score.alt=NA))
   }
@@ -164,5 +157,5 @@ analyz.mta.res0 <- function(model, miqp.res) {
   s1 <- s.ch/(length(yes)+length(no)+length(overdo)) - s.st/length(model$rxns.st)
 
   # return
-  data.table(solv.stat=miqp.res$status, obj.opt=miqp.res$obj, v.opt=list(v), int.opt=list(miqp.res$xopt[(n+1):length(miqp.res$xopt)]), rxns.change.yes=list(yes), rxns.change.no=list(no), rxns.change.overdo=list(overdo), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.change.overdo=list(adv.overdo), advs.steady=list(adv.st), score.change=s.ch, score.steady=s.st, score.mta=s, score.alt=s1)
+  data.table(solv.stat=miqp.res$stat.str, obj.opt=miqp.res$obj, v.opt=list(v), int.opt=list(miqp.res$xopt[(n+1):length(miqp.res$xopt)]), rxns.change.yes=list(yes), rxns.change.no=list(no), rxns.change.overdo=list(overdo), advs.change.yes=list(adv.yes), advs.change.no=list(adv.no), advs.change.overdo=list(adv.overdo), advs.steady=list(adv.st), score.change=s.ch, score.steady=s.st, score.mta=s, score.alt=s1)
 }

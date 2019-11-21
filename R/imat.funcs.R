@@ -402,10 +402,8 @@ run.imat <- function(model, params) {
     params$n <- NULL
   } else n <- 1
   
-  res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=n)
-  
-  if (!is.null(names(res))) res <- list(res) # if only 1 solution, wrap it in a list
-  res <- lapply(res, function(x) x[c("xopt","obj","status")])
+  res <- rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, vtype=vtype, control=params, n=n)
+
   model$milp.out <- res
   model
 }
@@ -414,13 +412,13 @@ get.imat.xopt <- function(imat.res, sol=0) {
   # if sol==0, pool all solutions and take the "consensus", otherwise use the one solution specified
   if (sol==0) {
     xopt <- do.call(cbind, lapply(imat.res$milp.out, function(x) {
-      if (x$status %in% c(101,102,128,129,130)) x$xopt else NULL
+      if (x$stat %in% c(101,102,128,129,130)) x$xopt else NULL
     }))
     if (is.null(xopt)) stop("run.imat: all MILP solutions may contain issues.\n")
     xopt <- rowMeans(xopt)
     xopt[imat.res$vtype=="I"] <- as.numeric(xopt[imat.res$vtype=="I"]>=0.667)
   } else {
-    if (!imat.res$milp.out[[sol]]$status %in% c(101,102,128,129,130)) stop("run.imat: the selected MILP solution may contain issues.\n")
+    if (!imat.res$milp.out[[sol]]$stat %in% c(101,102,128,129,130)) stop("run.imat: the selected MILP solution may contain issues.\n")
     xopt <- imat.res$milp.out[[sol]]$xopt
   }
   xopt
