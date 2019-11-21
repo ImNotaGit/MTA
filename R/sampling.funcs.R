@@ -83,8 +83,7 @@ get.opt.pnt <- function(model, c) {
   lb <- model$lb
   ub <- model$ub
   
-  res <- Rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=5000, tilim=120, threads=1))
-  if (res$status!=1) warning("Potential problems running LP. Solver status: ", res$status, ".\n")
-  res$xopt
+  res <- rcplex(cvec=cvec, objsense=objsense, Amat=Amat, bvec=bvec, sense=sense, lb=lb, ub=ub, control=list(trace=0, maxcalls=5000, tilim=120, threads=1))
+  res[[1]]$xopt
 }
 
