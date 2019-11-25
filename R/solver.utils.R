@@ -74,7 +74,7 @@ rcplex <- function(cvec, Amat, bvec, Qmat=NULL, lb=0, ub=Inf, x0=NULL, control=l
     res <- x[c("xopt", "obj")]
     res$stat <- x$status
     res$stat.str <- CPX_STAT_CODE[as.character(x$status)]
-    if (res$stat.str %in% grep("LIM", CPX_STAT_CODE, value=TRUE)) {
+    if (res$stat.str %in% grep("LIM", CPX_STAT_CODE, value=TRUE) && res.stat!=104) {
       warning("in rcplex(): Reached time or other limit.", call.=FALSE)
     }
     if (res$stat %in% c(2,118)) { # unbounded
