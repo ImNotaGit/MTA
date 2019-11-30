@@ -777,17 +777,14 @@ subsystems2gsets <- function(model, by=c("rxn","met"), exclude.mets="^h[\\[_].\\
   gsets <- tmp$rxn.id
   names(gsets) <- tmp$path
   if (by=="rxn") return(gsets)
-  # if by reaction, exclude metabolites
-  library(igraph)
-  tmp <- graph.incidence(model$S)
-  tmp <- bipartite.projection(tmp, which="false") # projected network of metabolites
-  deg <- igraph::degree(tmp) # make sure use degree from igraph
-  mets.rm <- unique(c(grep(exclude.mets, model$mets), which(deg>exclude.mets.degree)))
+  
+  # if by metabolite, exclude metabolites
+  mets.rm <- unique(c(grep(exclude.mets, model$mets), which(apply(model$S, 1, function(x) sum(x!=0))>exclude.mets.degree)))
   cat("The following metabolites are excluded:\n")
   cat(paste(model$mets[mets.rm], collapse=", "), "\n")
   
   gsets <- lapply(gsets, function(x) {
-    mets <- rxns2mets(as.integer(x), model)
+    mets <- rxns2mets(model, as.integer(x))
     mets <- unique(unlist(mets))
     as.character(setdiff(mets, mets.rm))
   })
