@@ -599,18 +599,19 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
       sr0 <- sample.range[[1]]
       sr1 <- sample.range[[2]]
     }
-    cl <- makeCluster(nc, type="FORK")
-    samp0 <- parApply(cl, imat.model0$S[mets,,drop=FALSE], 1, function(x) {
+    samp0 <- do.call(cbind, mclapply(1:length(mets), function(i) {
+      x <- imat.model0$S[mets,,drop=FALSE][i,]
       tmp <- imat.model0$sampl$pnts[,sr0]*x
       tmp[tmp<0] <- 0
       colSums(tmp)
-    })
-    samp1 <- parApply(cl, imat.model1$S[mets,,drop=FALSE], 1, function(x) {
+    }, mc.cores=nc))
+    samp1 <- do.call(cbind, mclapply(1:length(mets), function(i) {
+      x <- imat.model1$S[mets,,drop=FALSE][i,]
       tmp <- imat.model1$sampl$pnts[,sr1]*x
       tmp[tmp<0] <- 0
       colSums(tmp)
-    })
-    stopCluster(cl)
+    }, mc.cores=nc))
+    
     dflux.test <- function(s0, s1) {
       # run wilcox test
       tryCatch({
