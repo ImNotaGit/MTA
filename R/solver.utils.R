@@ -74,26 +74,18 @@ rcplex <- function(cvec, Amat, bvec, Qmat=NULL, lb=0, ub=Inf, x0=NULL, control=l
     res <- x[c("xopt", "obj")]
     res$stat <- x$status
     res$stat.str <- CPX_STAT_CODE[as.character(x$status)]
-    if (res$stat.str %in% grep("LIM", CPX_STAT_CODE, value=TRUE) && res.stat!=104) {
-      warning("in rcplex(): Reached time or other limit.", call.=FALSE)
+    if (!res$stat %in% c(1,101,102,128,129,130)) {
+      warning("In rcplex(): Potential issue, solver status: ", res$stat.str, call.=FALSE)
     }
-    if (res$stat %in% c(2,118)) { # unbounded
-      warning("in rcplex(): Model unbounded.", call.=FALSE)
+    if (res$stat %in% c(2,118,12)) {
+      # unbounded (2,118) or possibly unbounded (12, maybe others but I'm not sure) problem
       if (objsense=="min") res$obj <- -Inf
       if (objsense=="max") res$obj <- Inf
-    } else if (res$stat==20) {
-      warning("in rcplex(): Model has an unbounded optimal face.", call.=FALSE)
-    } else if (res$stat.str %in% grep("INFEAS", CPX_STAT_CODE, value=TRUE)) {
-      warning("in rcplex(): Model may be infeasible, solver status: ", res$stat.str, call.=FALSE)
-    } else if (res$stat %in% c(4,119)) { # infeasible or unbounded
-      warning("in rcplex(): Model is infeasible or unbounded.", call.=FALSE)
-    } else if (!res$stat %in% c(1,101,102,128,129,130)) {
-      warning("in rcplex(): Solution may not be optimal or other issues occurred, solver status: ", res$stat.str, call.=FALSE)
     }
     res
   }
   
-  if ("status" %in% names(res)) res <- list(res)
+  if (!is.null(names(res))) res <- list(res)
   res <- lapply(res, tmpf)
 }
 

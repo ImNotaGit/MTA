@@ -7,87 +7,158 @@ library(Rcplex.my)
 
 #### ---- metabolic model utils ----
 
-exprs2rxns <- function(vec, type=0, model, discrt=TRUE, na.replace=TRUE) {
-  # map a vector of expression values either meant to be levels or direction of changes of genes to those of the reactions in the metabolic model
-  # vec is a named vector of, names being gene symbol; or if it's unnamed and length being model$genes, assume it's already in the same order as model$genes
-  # type==0 for vec as gene levels, type==1 for vec as directions of changes
-  # discrt==TRUE for returning a flux vector or -1/0/1, otherwise the result will be continuous values
-  # NA's will be replaced by zeros if na.replace==TRUE
-
-  if (is.null(names(vec)) && length(vec)==length(model$genes)) x <- vec else x <- vec[model$genes]
-  if (discrt) x <- sign(x)
-  if (type==0) {
-    `&` <- function(a,b) {
-      #if (isTRUE(is.na(a) && b<0)) return(b)
-      #if (isTRUE(is.na(b) && a<0)) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
-      return(min(a,b))
-    }
-    `|` <- function(a,b) {
-      #if (isTRUE(is.na(a) && b>0)) return(b)
-      #if (isTRUE(is.na(b) && a>0)) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
-      return(max(a,b))
-    }
-  } else if (type==1) {
-    `&` <- function(a,b) { # if one is NA and the other is 0, for sure the result is 0; all other NA cases are undetermined and NA will be returned
-      if (isTRUE(sign(a)!=sign(b) || a==0 || b==0)) return(0)
-      return(min(a,b))
-    }
-    `|` <- function(a,b) { # all NA cases are undetermined and NA will be returned
-      if (isTRUE(sign(a)==sign(b))) return(max(a,b))
-      return(abs(sign(a)+sign(b))*(a+b))
-    }
-  }
-  res <- sapply(model$rules, function(i) eval(parse(text=i)))
-  if (na.replace) res[is.na(res)] <- 0
-  if (discrt) res <- as.integer(res)
-  unname(res)
-}
-
-rxns2genes <- function(vec, model) {
-  # given a numerical vector corresponding to the reaction indeces in the model, map each of them to gene names, return as a list; NA will be returned for reaction indeces outside the proper range (including 0)
-  vec[vec==0] <- NA
-  res <- lapply(str_extract_all(model$rules[vec], "[1-9][0-9]*"), function(x) unique(model$genes[as.numeric(x)]))
-  #if (length(res)==1) res <- res[[1]]
+all2idx <- function(model, x) {
+  # convert rxns or mets to indices; if x is already numeric, return x as is.
+  if (is.numeric(x)) return(x)
   
-  res
+  tmpf <- function(name, x) {
+    if (any(x %in% model[[name]])) {
+      message("all2idx(): input as ", name, ".")
+      res <- match(x, model[[name]])
+      tmp <- is.na(res)
+      if (any(tmp)) warning("NA's returned for these IDs not found: ", paste(x[tmp], collapse=", "), ".", call.=FALSE)
+      res
+    } else NULL
+  }
+  
+  for (i in c("rxns","mets")) { # for now, only these two; rxnNames, metNames and genes have duplications
+    res <- tmpf(i, x)
+    if (!is.null(res)) return(res)
+  }
 }
 
-genes2rxns <- function(genes, model, type=0) {
-  # given a vector of gene symbols, for each of them map to reactions (rxn indeces in the model), return as a list
-  # type==0 for any reactions involving the gene; type==1 for reactions where the gene is essential (corresponding to that if the gene level is low, then the reaction flux should be low)
-  if (type==0) {
-    r2g <- rxns2genes(1:length(model$rules), model)
+rxns2mets <- function(model, x, type=c(0,-1,1), rev.type=c(1,0), ret.type=NULL) {
+  # map reactions to metabolites, return a list
+  # type: 0: all; -1: reactants; 1: products
+  # rev.type: for a reversible reaction, 1: type based on the direction it is written in; 0: always return all
+  # ret.type: by default return indices; or "mets", "metNames" etc.
+  
+  # match.arg, below are workarounds since it cannot match numerical arguments
+  type <- match.arg(as.character(type[1]), c("0","-1","1"))
+  rev.type <- match.arg(as.character(rev.type[1]), c("1","0"))
+  
+  idx <- all2idx(model, x)
+  names(idx) <- x
+  lapply(idx, function(i) {
+    if (model$lb[i]<0 && rev.type=="0") typ <- "0" else typ <- type
+    res <- switch(typ,
+                  `0`=which(model$S[,i]!=0),
+                  `-1`=which(model$S[,i]<0),
+                  `1`=which(model$S[,i]>0))
+    if (!is.null(ret.type)) res <- model[[ret.type]][res]
+    res
+  })
+}
+
+mets2rxns <- function(model, x, type=c(0,-1,1), rev.type=c(1,0), ret.type=NULL) {
+  # map metabolites to reactions, return a list
+  # type: 0: all; -1: reactants; 1: products
+  # rev.type: for a reversible reaction, 1: type based on the direction it is written in; 0: always return all
+  # ret.type: by default return indices; or "rxns", "rxnNames" etc.
+  
+  type <- match.arg(as.character(type[1]), c("0","-1","1"))
+  rev.type <- match.arg(as.character(rev.type[1]), c("1","0"))
+  
+  idx <- all2idx(model, x)
+  names(idx) <- x
+  lapply(idx, function(i) {
+    if (rev.type=="1") {
+      res <- switch(type,
+                    `0`=which(model$S[i,]!=0),
+                    `-1`=which(model$S[i,]<0),
+                    `1`=which(model$S[i,]>0))
+    } else if (rev.type=="0") {
+      res <- switch(type,
+                    `0`=which(model$S[i,]!=0),
+                    `-1`=which(model$S[i,]<0 | (model$S[i,]>0 & model$lb<0)),
+                    `1`=which(model$S[i,]>0 | (model$S[i,]<0 & model$lb<0)))
+    }
+    if (!is.null(ret.type)) res <- model[[ret.type]][res]
+    res
+  })
+}
+
+rxns2genes <- function(model, x) {
+  # map reactions to gene names, return as a list
+  idx <- all2idx(model, x)
+  idx[idx==0] <- NA # NA will be returned where x is 0
+  lapply(str_extract_all(model$rules[idx], "[1-9][0-9]*"), function(x) unique(model$genes[as.numeric(x)]))
+}
+
+genes2rxns <- function(model, genes, type=c(0,1), ret.type=NULL) {
+  # map gene symbols to reaction indices, return as a list
+  # type==0 for any reactions involving the gene; type==1 for reactions where the gene is essential (corresponding to that if the gene is removed, then the reaction cannot happen based on model$rules)
+  # ret.type: by default return indices; or "rxns", "rxnNames" etc.
+  
+  type <- match.arg(as.character(type[1]), c("0","1"))
+  
+  if (type=="0") {
+    r2g <- rxns2genes(model, 1:length(model$rules))
     res <- lapply(genes, function(gi) which(sapply(r2g, function(gns) gi %in% gns)))
-  } else if (type==1) {
+  } else if (type=="1") {
     gind <- match(genes, model$genes)
     res <- lapply(gind, function(gi) {
       tmp <- rep(0, length(model$genes))
       tmp[gi] <- -1
-      which(exprs2rxns(tmp, 0, model)==-1)
+      which(exprs2rxns(model, tmp, 0)==-1)
     })
   }
-
+  
+  if (!is.null(ret.type)) res <- lapply(res, function(x) model[[ret.type]][x])
   res
 }
 
-rxns2mets <- function(vec, model) {
-  # given a vector of reaction indices, map each of them to metabolite indices
-  res <- lapply(vec, function(i) which(model$S[,i]!=0))
-  names(res) <- vec
-  res
+exprs2fluxes <- function(model, x, type=c(0,1), return.type=c("i","c"), na2zero=TRUE) {
+  # map a numeric vector x meant to be either expression levels (type==0) or differential expression changes (type==1) of genes to the flux levels or changes of the reactions (respectively) in the model
+  # x should be named by gene symbols as used in model$genes, or if it's unnamed and length being length(model$genes), assume it's already in the same order as model$genes
+  # return.type: "i": x as well as the returned flux vector will be discretized to -1/0/1, "c": the result will be continuous values
+  # NA's will be replaced by zeros if na2zero==TRUE, otherwise keep and propagate NA
+  
+  type <- match.arg(as.character(type[1]), c("0","1"))
+  return.type <- match.arg(as.character(return.type[1]), c("i","c"))
+  
+  if (is.null(names(x))) {
+    if (length(x)==length(model$genes)) {
+      message("exprs2fluxes(): assuming the input vector is in the same order as model$genes.")
+    } else stop("Input vector and model$genes have different lengths!")
+  } else {
+    x <- x[model$genes]
+    if (all(is.na(x))) stop("Input doesn't contain any of the model genes!")
+  }
+
+  if (return.type=="i") x <- sign(x)
+  if (type=="0") {
+    `&` <- function(a,b) {
+      #if (isTRUE(is.na(a) && b<0)) return(b)
+      #if (isTRUE(is.na(b) && a<0)) return(a) # if one is NA and the other <0, for sure the result is the <0 value; all other NA cases are undetermined and NA will be returned
+      min(a,b)
+    }
+    `|` <- function(a,b) {
+      #if (isTRUE(is.na(a) && b>0)) return(b)
+      #if (isTRUE(is.na(b) && a>0)) return(a) # if one is NA and the other >0, for sure the result is the >0 value; all other NA cases are undetermined and NA will be returned
+      max(a,b)
+    }
+  } else if (type=="1") {
+    `&` <- function(a,b) { # if one is NA and the other is 0, for sure the result is 0; all other NA cases are undetermined and NA will be returned
+      if (isTRUE(sign(a)!=sign(b) || a==0 || b==0)) return(0)
+      min(a,b)
+    }
+    `|` <- function(a,b) { # all NA cases are undetermined and NA will be returned
+      if (isTRUE(sign(a)==sign(b))) return(max(a,b))
+      abs(sign(a)+sign(b))*(a+b)
+    }
+  }
+  res <- sapply(model$rules, function(i) eval(parse(text=i)))
+  if (na2zero) res[is.na(res)] <- 0
+  if (return.type=="i") res <- as.integer(res)
+  unname(res)
 }
 
-mets2rxns <- function(vec, model) {
-  # given a vector of metabolite indices, map each of them to reaction indices
-  res <- lapply(vec, function(i) which(model$S[i,]!=0))
-  names(res) <- vec
-  res
-}
-
-get.rxn.equations <- function(vec, model) {
-  # given a numerical vector corresponding to the reaction indeces in the model, return string vector containing the equations of the corresponding reactions
-  sapply(vec, function(i) {
-    x <- model$S[, i]
+get.rxn.equations <- function(model, x) {
+  # get equations of reactions
+  idx <- all2idx(model, x)
+  sapply(idx, function(i) {
+    x <- model$S[,i]
     rs <- paste(trimws(paste(ifelse(x[x<0]==-1,"",-x[x<0]), model$mets[x<0])), collapse=" + ")
     ps <- paste(trimws(paste(ifelse(x[x>0]==1,"",x[x>0]), model$mets[x>0])), collapse=" + ")
     if (model$lb[i]>=0) arrow <- "-->" else arrow <- "<==>"
@@ -99,15 +170,12 @@ s2igraph <- function(model, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?
   # create an igraph bipartite graph from the model S matrix (directed graph, unweighted)
   # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
   # exclude.mets.degree: exclude metabolites with degree greater than this
-  # exclude.mets are the IDs (as in model$mets) of other mets to be excluded
+  # exclude.mets are other mets to be excluded (either indices or IDs or names)
   
   s <- as.matrix(model$S) # convert to "dense" matrix, since the igraph::graph_from_incidence_matrix function contains bugs working with sparse matrix
   # exclude metabolites
-  exclude.mets <- match(exclude.mets, model$mets)
-  tmp <- igraph::graph_from_incidence_matrix(s)
-  tmp <- igraph::bipartite_projection(tmp, which="false") # projected network of metabolites
-  deg <- igraph::degree(tmp)
-  exclude.mets <- c(exclude.mets, which(deg>exclude.mets.degree))
+  exclude.mets <- all2idx(model, exclude.mets)
+  exclude.mets <- c(exclude.mets, which(apply(s, 1, function(x) sum(x!=0))>exclude.mets.degree))
   if (!(is.null(exclude.mets.default) || exclude.mets.default=="")) {
     emd <- grep(exclude.mets.default, model$mets)
     exclude.mets <- unique(c(exclude.mets, emd))
@@ -117,7 +185,7 @@ s2igraph <- function(model, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?
   colnames(s) <- model$rxns
   # print a message about the removed metabolites
   exclude.mets <- model$mets[exclude.mets]
-  exclude.mets <- unique(str_replace(exclude.mets, "[\\[_].\\]?$", ""))
+  exclude.mets <- unique(stringr::str_replace(exclude.mets, "[\\[_].\\]?$", ""))
   message("The following metabolites are excluded:")
   message(paste(exclude.mets, collapse=", "))
   
@@ -149,12 +217,13 @@ s2igraph <- function(model, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?
   g <- igraph::delete_vertex_attr(g, "type_3")
 }
 
-get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
+get.neighborhood <- function(model, ids, order=1, type=c("rxn","met"), exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
   # given the IDs (as in model$rxns or model$mets) of a set of rxns or mets (specified by type), return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn.
   # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
   # exclude.mets.degree: exclude metabolites with degree greater than this
-  # exclude.mets are the IDs (as in model$mets) of other mets to be excluded
+  # exclude.mets are other mets to be excluded (either indices or IDs or names)
   
+  type <- match.arg(type)
   gb <- s2igraph(model, exclude.mets.default, exclude.mets.degree, exclude.mets)
   
   if (type=="rxn") {
@@ -170,12 +239,12 @@ get.neighborhood <- function(model, ids, order=1, type="rxn", exclude.mets.defau
   res
 }
 
-get.path <- function(model, from, to, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
+get.path <- function(model, from, to, shortest=TRUE, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
   # print the shortest (directed) path(s) between a pair of metabolites or reactions, given as IDs as in model$mets or model$rxns. The path(s) will contain both reactions and metabolites along the way.
   # will also return a list of shortest paths, each element per path being also a list with $path containing a vector of the entire path, $mets containing the path containing only mets, and $rxns containing the path containing only rxns 
   # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
   # exclude.mets.degree: exclude metabolites with degree greater than this
-  # exclude.mets are the IDs (as in model$S) of other mets to be excluded
+  # exclude.mets are other mets to be excluded (either indices or IDs or names)
   
   gb <- s2igraph(model, exclude.mets.default, exclude.mets.degree, exclude.mets)
   tmp <- igraph::all_shortest_paths(gb, from, to, mode="out", weights=NA)
@@ -530,14 +599,18 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
       sr0 <- sample.range[[1]]
       sr1 <- sample.range[[2]]
     }
-    samp0 <- apply(imat.model0$S[mets,,drop=FALSE], 1, function(x) {
+    cl <- makeCluster(nc, type="FORK")
+    samp0 <- parApply(cl, imat.model0$S[mets,,drop=FALSE], 1, function(x) {
       tmp <- imat.model0$sampl$pnts[,sr0]*x
-      apply(tmp, 2, function(y) sum(y[y>0]))
+      tmp[tmp<0] <- 0
+      colSums(tmp)
     })
-    samp1 <- apply(imat.model1$S[mets,,drop=FALSE], 1, function(x) {
+    samp1 <- parApply(cl, imat.model1$S[mets,,drop=FALSE], 1, function(x) {
       tmp <- imat.model1$sampl$pnts[,sr1]*x
-      apply(tmp, 2, function(y) sum(y[y>0]))
+      tmp[tmp<0] <- 0
+      colSums(tmp)
     })
+    stopCluster(cl)
     dflux.test <- function(s0, s1) {
       # run wilcox test
       tryCatch({
