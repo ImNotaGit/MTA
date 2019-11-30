@@ -585,11 +585,12 @@ get.diff.comb.flux <- function(imat.model0, imat.model1, use.sample=TRUE, sample
 }
 
 get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, sample.range=NULL, mets="all", nc=1L, padj.cutoff=0.01, r.cutoff=0.1, diff.med.cutoff=0.1) {
-    # do differential flux analysis for the flux through each metabolite (i.e. either the production or consumption, they should be the same in magnitude if S*v=0; below I am using the production flux): imat.model1 compared to imat.model0
-    # if use.sample, use the sampled flux distributions saved in the imat.models, by default, use 1001:end sample points; or specify range of sample points for model0 and model1 respectively in a list
-    # is use.sample==FALSE, then deterimine diff flux by obtaining the min and max fluxes through each metabolite for the two models, and regard metabolites with either increased lb or increased ub as upregulated and vice versa; ambiguous cases (e.g. lowered lb and increased ub) are regarded as non-differential
-    # by default, mets="all" means performing the analysis across all metabolites; or specify metabolite indices; nc is the number of cores for paralleling across the metabolites
-    # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed metabolites when use.sample==TRUE
+  # do differential flux analysis for the flux through each metabolite (i.e. either the production or consumption, they should be the same in magnitude if S*v=0); imat.model1 compared to imat.model0
+  # if use.sample, use the sampled flux distributions saved in the imat.models, by default, use 1001:end sample points; or specify range of sample points for model0 and model1 respectively in a list
+  # is use.sample==FALSE, then deterimine diff flux by obtaining the min and max fluxes through each metabolite for the two models, and regard metabolites with either increased lb or increased ub as upregulated and vice versa; ambiguous cases (e.g. lowered lb and increased ub) are regarded as non-differential
+  # by default, mets="all" means performing the analysis across all metabolites; or specify metabolite indices; nc is the number of cores for paralleling across the metabolites
+  # padj.cutoff and r.cutoff and log.fc.cutoff are used to determine the significantly changed metabolites when use.sample==TRUE
+  
   if (length(mets)==1 && mets=="all") mets <- 1:length(imat.model0$mets)
   if (use.sample) {
     if (is.null(sample.range)) {
@@ -599,18 +600,21 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
       sr0 <- sample.range[[1]]
       sr1 <- sample.range[[2]]
     }
-    samp0 <- do.call(cbind, mclapply(1:length(mets), function(i) {
-      x <- imat.model0$S[mets,,drop=FALSE][i,]
-      tmp <- imat.model0$sampl$pnts[,sr0]*x
-      tmp[tmp<0] <- 0
-      colSums(tmp)
-    }, mc.cores=nc))
-    samp1 <- do.call(cbind, mclapply(1:length(mets), function(i) {
-      x <- imat.model1$S[mets,,drop=FALSE][i,]
-      tmp <- imat.model1$sampl$pnts[,sr1]*x
-      tmp[tmp<0] <- 0
-      colSums(tmp)
-    }, mc.cores=nc))
+    samp0 <- abs(imat.model0$S[mets,,drop=FALSE]) %*% abs(imat.model0$sampl$pnts[,sr0]) / 2
+    samp1 <- abs(imat.model1$S[mets,,drop=FALSE]) %*% abs(imat.model1$sampl$pnts[,sr0]) / 2
+    #samp0 <- mclapply(1:length(mets), function(i) {
+    #  x <- imat.model0$S[mets,,drop=FALSE][i,]
+    #  tmp <- imat.model0$sampl$pnts[,sr0]*x
+    #  tmp[tmp<0] <- 0
+    #  colSums(tmp)
+    #}, mc.cores=nc)
+    #samp1 <- mclapply(1:length(mets), function(i) {
+    #  x <- imat.model1$S[mets,,drop=FALSE][i,]
+    #  tmp <- imat.model1$sampl$pnts[,sr1]*x
+    #  tmp[tmp<0] <- 0
+    #  colSums(tmp)
+    #}, mc.cores=nc)
+  }
     
     dflux.test <- function(s0, s1) {
       # run wilcox test
@@ -631,7 +635,9 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
         data.table(lb0=NA, ub0=NA, med0=NA, lb1=NA, ub1=NA, med1=NA, diff.med=NA, r=NA, pval=NA)
       })
     }
-    res <- rbindlist(mclapply(1:length(mets), function(i) dflux.test(samp0[,i], samp1[,i]), mc.cores=nc))
+
+    res <- rbindlist(mclapply(1:length(mets), function(i) dflux.test(samp0[i,], samp1[i,]), mc.cores=nc))
+    #res <- rbindlist(mclapply(1:length(mets), function(i) dflux.test(samp0[[i]], samp1[[i]]), mc.cores=nc))
     res[, padj:=p.adjust(pval, method="BH")]
     res <- cbind(data.table(id=mets, met=imat.model0$mets[mets]), res)
     res <- res[order(-abs(diff.med), -abs(r), padj, pval)]
