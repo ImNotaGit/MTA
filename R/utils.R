@@ -614,7 +614,6 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
     #  tmp[tmp<0] <- 0
     #  colSums(tmp)
     #}, mc.cores=nc)
-  }
     
     dflux.test <- function(s0, s1) {
       # run wilcox test
