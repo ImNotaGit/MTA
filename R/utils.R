@@ -174,9 +174,9 @@ get.exclude.mets <- function(model, mets=NULL, rgx="default", degree=ncol(model$
   
   exclude.mets <- all2idx(model, mets)
   exclude.mets <- c(exclude.mets, which(rowSums(model$S!=0)>degree))
-  if (!(is.null(default) || is.na(default) || default=="")) {
-    if (default=="default") default <- "^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$"
-    emd <- grep(default, model$mets)
+  if (!(is.null(rgx) || is.na(rgx) || rgx=="")) {
+    if (rgx=="default") rgx <- "^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$"
+    emd <- grep(rgx, model$mets)
     exclude.mets <- unique(c(exclude.mets, emd))
   }
   # print a message about the removed metabolites
