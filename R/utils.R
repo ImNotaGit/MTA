@@ -166,28 +166,39 @@ get.rxn.equations <- function(model, x) {
   })
 }
 
-s2igraph <- function(model, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
-  # create an igraph bipartite graph from the model S matrix (directed graph, unweighted)
-  # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
-  # exclude.mets.degree: exclude metabolites with degree greater than this
-  # exclude.mets are other mets to be excluded (either indices or IDs or names)
+get.exclude.mets <- function(model, mets=NULL, rgx="default", degree=ncol(model$S)) {
+  # a helper function used by others for getting a set of metabolites that will be excluded from metabolic network; return a vector of metabolite indices
+  # mets: mets to be excluded (either indices or IDs or names); default to nothing
+  # rgx: regex of mets to be excluded; default to some high degree metabolites (see below, works for mets format like "h_c" or "h[c]")
+  # degree: exclude metabolites with degree (number of edges to reactions) greater than this; default effect is that no further mets are excluded
   
-  s <- as.matrix(model$S) # convert to "dense" matrix, since the igraph::graph_from_incidence_matrix function contains bugs working with sparse matrix
-  # exclude metabolites
-  exclude.mets <- all2idx(model, exclude.mets)
-  exclude.mets <- c(exclude.mets, which(apply(s, 1, function(x) sum(x!=0))>exclude.mets.degree))
-  if (!(is.null(exclude.mets.default) || exclude.mets.default=="")) {
-    emd <- grep(exclude.mets.default, model$mets)
+  exclude.mets <- all2idx(model, mets)
+  exclude.mets <- c(exclude.mets, which(rowSums(model$S!=0)>degree))
+  if (!(is.null(default) || is.na(default) || default=="")) {
+    if (default=="default") default <- "^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$"
+    emd <- grep(default, model$mets)
     exclude.mets <- unique(c(exclude.mets, emd))
   }
-  s[exclude.mets, ] <- 0
-  rownames(s) <- model$mets
-  colnames(s) <- model$rxns
   # print a message about the removed metabolites
   exclude.mets <- model$mets[exclude.mets]
   exclude.mets <- unique(stringr::str_replace(exclude.mets, "[\\[_].\\]?$", ""))
   message("The following metabolites are excluded:")
   message(paste(exclude.mets, collapse=", "))
+  exclude.mets
+}
+
+s2igraph <- function(model, exclude.mets=NULL, exclude.mets.rgx="default", exclude.mets.degree=ncol(model$S)) {
+  # create an igraph bipartite graph from the model S matrix (directed graph, unweighted)
+  # exclude.mets are mets to be excluded (either indices or IDs or names)
+  # exclude.mets.rgx: regex of some high degree metabolites to be excluded by default; if "default", will use the default as in get.exclude.mets()
+  # exclude.mets.degree: exclude metabolites with degree greater than this
+  
+  s <- as.matrix(model$S) # convert to "dense" matrix, since the igraph::graph_from_incidence_matrix function contains bugs working with sparse matrix
+  # exclude metabolites
+  exclude.mets <- get.exclude.mets(model, exclude.mets, exclude.mets.rgx, exclude.mets.degree)
+  s[exclude.mets, ] <- 0
+  rownames(s) <- model$mets
+  colnames(s) <- model$rxns
   
   # create directed bipartite graph between mets and rxns
   # reversible reactions: bi-directional edges
@@ -217,19 +228,18 @@ s2igraph <- function(model, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?
   g <- igraph::delete_vertex_attr(g, "type_3")
 }
 
-get.neighborhood <- function(model, ids, order=1, type=c("rxn","met"), exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
-  # given the IDs (as in model$rxns or model$mets) of a set of rxns or mets (specified by type), return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn.
-  # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
+get.neighborhood <- function(model, ids, order=1, exclude.mets=NULL, exclude.mets.rgx="default", exclude.mets.degree=ncol(model$S)) {
+  # given the IDs (as in model$rxns or model$mets) of either a set of rxns or a set of mets, return the IDs of the rxns or mets with distance<=order from each of the given ones (as a list). by default order=1 means the rxns sharing a met or the mets within the same rxn. Whether rxns or mets are provided will be decided automatically.
+  # exclude.mets are mets to be excluded (either indices or IDs or names)
+  # exclude.mets.rgx: regex of some high degree metabolites to be excluded by default; if "default", will use the default as in get.exclude.mets()
   # exclude.mets.degree: exclude metabolites with degree greater than this
-  # exclude.mets are other mets to be excluded (either indices or IDs or names)
+
+  gb <- s2igraph(model, exclude.mets, exclude.mets.rgx, exclude.mets.degree)
   
-  type <- match.arg(type)
-  gb <- s2igraph(model, exclude.mets.default, exclude.mets.degree, exclude.mets)
-  
-  if (type=="rxn") {
+  if (any(ids %in% model$rxns)) {
     # project bipartite graph into the graph of rxns
     gp <- igraph::bipartite_projection(gb, which="true")
-  } else if (type=="met") {
+  } else if (any(ids %in% model$mets)) {
     # project bipartite graph into the graph of mets
     gp <- igraph::bipartite_projection(gb, which="false")
   }
@@ -239,36 +249,43 @@ get.neighborhood <- function(model, ids, order=1, type=c("rxn","met"), exclude.m
   res
 }
 
-get.path <- function(model, from, to, shortest=TRUE, exclude.mets.default="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), exclude.mets=NULL) {
-  # print the shortest (directed) path(s) between a pair of metabolites or reactions, given as IDs as in model$mets or model$rxns. The path(s) will contain both reactions and metabolites along the way.
-  # will also return a list of shortest paths, each element per path being also a list with $path containing a vector of the entire path, $mets containing the path containing only mets, and $rxns containing the path containing only rxns 
-  # exclude.mets.default: regex of some high degree metabolites to be excluded by default when determining the neighborhood; the regex works for mets formats like "h[c]" and "h_c"
+get.path <- function(model, from, to, shortest=TRUE, exclude.mets=NULL, exclude.mets.rgx="default", exclude.mets.degree=ncol(model$S)) {
+  # if shortest=TRUE, print the shortest (directed) path(s) between a pair of nodes (mets or rxns, can be mixed) in the metabolic network, given as IDs as in model$mets or model$rxns. The path(s) will contain both reactions and metabolites along the way. Whether rxns or mets are provided will be decided automatically.
+  # will also return a list of shortest paths, each element per path being also a list with $path containing a vector of the entire path, $mets containing the path containing only mets, and $rxns containing the path containing only rxns
+  # if shortest=FALSE, will get all simple paths, with the current implementation with igraph::all_simple_paths() this is *extremely* slow that it's virually impractical.
+  # exclude.mets are mets to be excluded (either indices or IDs or names)
+  # exclude.mets.rgx: regex of some high degree metabolites to be excluded by default; if "default", will use the default as in get.exclude.mets()
   # exclude.mets.degree: exclude metabolites with degree greater than this
-  # exclude.mets are other mets to be excluded (either indices or IDs or names)
   
-  gb <- s2igraph(model, exclude.mets.default, exclude.mets.degree, exclude.mets)
-  tmp <- igraph::all_shortest_paths(gb, from, to, mode="out", weights=NA)
+  gb <- s2igraph(model, exclude.mets, exclude.mets.rgx, exclude.mets.degree)
   
-  tmp <- lapply(tmp$res, function(x) {
-    x <- names(x)
-    xx <- x
-    # format and print results
-    if (x[1] %in% model$mets) {
-      mets <- x[seq(1, length(x), 2)]
-      rxns <- x[seq(2, length(x), 2)]
-      xx[seq(2, length(xx), 2)] <- paste0("--(", xx[seq(2, length(xx), 2)], ")->")
-    } else if (x[1] %in% model$rxns) {
-      rxns <- x[seq(1, length(x), 2)]
-      mets <- x[seq(2, length(x), 2)]
-      xx[seq(1, length(xx), 2)] <- paste0("--(", xx[seq(1, length(xx), 2)], ")->")
-    }
-    xx <- paste(xx, collapse=" ")
-    list(prt=xx, path=x, mets=mets, rxns=rxns)
-  })
-  # print result
-  print(sapply(tmp, function(x) x$prt))
-  # return silently
-  res <- lapply(tmp, function(x) x[c("path", "mets", "rxns")])
+  if (shortest) {
+    tmp <- igraph::all_shortest_paths(gb, from, to, mode="out", weights=NA)
+    tmp <- lapply(tmp$res, function(x) {
+      x <- names(x)
+      xx <- x
+      # format and print results
+      if (x[1] %in% model$mets) {
+        mets <- x[seq(1, length(x), 2)]
+        rxns <- x[seq(2, length(x), 2)]
+        xx[seq(2, length(xx), 2)] <- paste0("--(", xx[seq(2, length(xx), 2)], ")->")
+      } else if (x[1] %in% model$rxns) {
+        rxns <- x[seq(1, length(x), 2)]
+        mets <- x[seq(2, length(x), 2)]
+        xx[seq(1, length(xx), 2)] <- paste0("--(", xx[seq(1, length(xx), 2)], ")->")
+      }
+      xx <- paste(xx, collapse=" ")
+      list(prt=xx, path=x, mets=mets, rxns=rxns)
+    })
+    # print result
+    print(sapply(tmp, function(x) x$prt))
+    res <- lapply(tmp, function(x) x[c("path", "mets", "rxns")])
+  } else {
+    tmp <- igraph::all_simple_paths(gb, from, to, mode="out")
+    # extract result: not implemented yet
+    res <- tmp # a place-holder
+  }
+  invisible(res)
 }
 
 subset.model <- function(model, i, j) {
@@ -602,19 +619,7 @@ get.diff.flux.by.met <- function(imat.model0, imat.model1, use.sample=TRUE, samp
     }
     samp0 <- abs(imat.model0$S[mets,,drop=FALSE]) %*% abs(imat.model0$sampl$pnts[,sr0]) / 2
     samp1 <- abs(imat.model1$S[mets,,drop=FALSE]) %*% abs(imat.model1$sampl$pnts[,sr0]) / 2
-    #samp0 <- mclapply(1:length(mets), function(i) {
-    #  x <- imat.model0$S[mets,,drop=FALSE][i,]
-    #  tmp <- imat.model0$sampl$pnts[,sr0]*x
-    #  tmp[tmp<0] <- 0
-    #  colSums(tmp)
-    #}, mc.cores=nc)
-    #samp1 <- mclapply(1:length(mets), function(i) {
-    #  x <- imat.model1$S[mets,,drop=FALSE][i,]
-    #  tmp <- imat.model1$sampl$pnts[,sr1]*x
-    #  tmp[tmp<0] <- 0
-    #  colSums(tmp)
-    #}, mc.cores=nc)
-    
+
     dflux.test <- function(s0, s1) {
       # run wilcox test
       tryCatch({
@@ -694,39 +699,35 @@ check.diff.flux.of.met <- function(dflux.res, met.ids, model) {
     rxn.ids <- which(tmp!=0)
     dirs <- tmp[rxn.ids]
     tmp <- dflux.res[match(rxn.ids, id), .(diff.med=med1-med0, dir)]
-    res <- cbind(data.table(met=model$mets[i], rxn.id=rxn.ids, met.dir=dirs), tmp, data.table(subsystem=model$subSystems[rxn.ids], equation=get.rxn.equation(rxn.ids,model)))
+    res <- cbind(data.table(met=model$mets[i], rxn.id=rxn.ids, met.dir=dirs), tmp, data.table(subsystem=model$subSystems[rxn.ids], equation=get.rxn.equations(model, rxn.ids)))
     res[order(-met.dir, -diff.med)]
   })
 }
 
-get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$") {
+get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets.rgx="default") {
   # from the result of differential flux analysis with get.diff.flux, identify all the subnetworks (of >2 reactions) with a consistent direction of flux difference (i.e. all increase or all decrease).
   # dflux.cutoff: used to determine the reactions with differential fluxes
-  # exclude.mets: regex of some high degree metabolites to be excluded; the regex works for mets formats like "h[c]" and "h_c"
+  # exclude.mets.rgx: regex of some high degree metabolites to be excluded; default to that in get.exclude.mets()
   
-  library(igraph)
   s <- model$S
   # exclude metabolites
-  if (!(is.null(exclude.mets) || exclude.mets=="")) {
-    exclude.mets <- grep(exclude.mets, model$mets)
-    cat("The following metabolites are excluded:\n")
-    cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
-    s[exclude.mets, ] <- 0
-  }
+  exclude.mets <- get.exclude.mets(model, rgx=exclude.mets.rgx)
+  s[exclude.mets, ] <- 0
+
   # create bipartite graph between mets and rxns
-  gb <- graph.incidence(s)
+  gb <- igraph::graph.incidence(s)
   # project bipartite graph into the graph of rxns
-  gp <- bipartite.projection(gb, which="true")
-  V(gp)$name <- 1:length(V(gp)) # set vertex names to the rxn ids, since the induced_subgraph below will re-number the vertices and then the rxn ids will be lost
+  gp <- igraph::bipartite.projection(gb, which="true")
+  igraph::V(gp)$name <- 1:length(igraph::V(gp)) # set vertex names to the rxn ids, since the induced_subgraph below will re-number the vertices and then the rxn ids will be lost
   # for reactions with increased fluxes
   df.rxns <- dflux.res[dir>=dflux.cutoff, id]
-  gp1 <- induced_subgraph(gp, df.rxns)
-  subn.pos <- groups(components(gp1))
+  gp1 <- igraph::induced_subgraph(gp, df.rxns)
+  subn.pos <- igraph::groups(igraph::components(gp1))
   subn.pos <- cbind(data.table(df.dir=1), rbindlist(lapply(subn.pos, function(x) data.table(size=length(x), rxn.ids=list(as.numeric(x))))))[size>1][order(-size)]
   # for reactions with decreased fluxes
   df.rxns <- dflux.res[-dir>=dflux.cutoff, id]
-  gp1 <- induced_subgraph(gp, df.rxns)
-  subn.neg <- groups(components(gp1))
+  gp1 <- igraph::induced_subgraph(gp, df.rxns)
+  subn.neg <- igraph::groups(igraph::components(gp1))
   subn.neg <- cbind(data.table(df.dir=-1), rbindlist(lapply(subn.neg, function(x) data.table(size=length(x), rxn.ids=list(as.numeric(x))))))[size>1][order(-size)]
   # combine
   subn <- rbind(subn.pos, subn.neg)
@@ -738,10 +739,10 @@ get.dflux.subnetwork <- function(dflux.res, model, dflux.cutoff=1, exclude.mets=
   subn
 }
 
-get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^co2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$") {
+get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets.rgx="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^co2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$") {
   # from the result of differential flux analysis with get.diff.flux, identify the flux differences of different directions (i.e. include both increase and decrease) associated with "branching point" metabolites (i.e. metabolites involved in >= 3 reactions): these cases reflect the metabolic flux diversion between two conditions.
   # dflux.cutoff: used to determine the reactions with differential fluxes
-  # exclude.mets: regex of some high degree metabolites to be excluded; the regex works for mets formats like "h[c]" and "h_c"
+  # exclude.mets.rgx: regex of some high degree metabolites to be excluded; the regex works for mets formats like "h[c]" and "h_c"
   
   df.rxns <- dflux.res[abs(dir)>=dflux.cutoff, id]
   s <- model$S
@@ -749,17 +750,13 @@ get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^
   # "branching point" metabolites associated with diff flux
   div.mets <- which(Matrix::rowSums(s)>=3 & Matrix::rowSums(s[,df.rxns,drop=FALSE])!=0)
   # exclude metabolites
-  if (!(is.null(exclude.mets) || exclude.mets=="")) {
-    exclude.mets <- grep(exclude.mets, model$mets)
-    cat("The following metabolites are excluded:\n")
-    cat(paste(model$mets[exclude.mets], collapse=", "), "\n")
-    div.mets <- setdiff(div.mets, exclude.mets)
-  }
+  exclude.mets <- get.exclude.mets(model, rgx=exclude.mets.rgx)
+  div.mets <- setdiff(div.mets, exclude.mets)
   names(div.mets) <- div.mets
   
   res <- rbindlist(lapply(div.mets, function(x) {
     x.df.rxns <- df.rxns[s[x, df.rxns]!=0]
-    dflux.res[id %in% x.df.rxns, .(rxn.id=id, rxn, met.dir=sign(model$S[x,id]), df.dir=dir, subsystem=model$subSystems[id], equation=get.rxn.equation(id,model))][uniqueN(sign(df.dir))>1][order(-met.dir, -df.dir)]
+    dflux.res[id %in% x.df.rxns, .(rxn.id=id, rxn, met.dir=sign(model$S[x,id]), df.dir=dir, subsystem=model$subSystems[id], equation=get.rxn.equations(model,id))][uniqueN(sign(df.dir))>1][order(-met.dir, -df.dir)]
   }), idcol="met.id")
   res[, met.id:=as.numeric(met.id)]
   res[, met:=model$mets[met.id]]
@@ -767,9 +764,9 @@ get.flux.diversion <- function(dflux.res, model, dflux.cutoff=1, exclude.mets="^
   res
 }
 
-subsystems2gsets <- function(model, by=c("rxn","met"), exclude.mets="^h[\\[_].\\]?$|^oh1[\\[_].\\]?$|^h2o[\\[_].\\]?$|^atp[\\[_].\\]?$|^adp[\\[_].\\]?$|^pi[\\[_].\\]?$|^ppi[\\[_].\\]?$|^coa[\\[_].\\]?$|^o2[\\[_].\\]?$|^co2[\\[_].\\]?$|^nadp[\\[_].\\]?$|^nadph[\\[_].\\]?$|^nad[\\[_].\\]?$|^nadh[\\[_].\\]?$|^fad[\\[_].\\]?$|^fadh2[\\[_].\\]?$|^na1[\\[_].\\]?$|^so4[\\[_].\\]?$|^nh4[\\[_].\\]?$|^cl[\\[_].\\]?$", exclude.mets.degree=nrow(model$S), name="subSystems") {
+subsystems2gsets <- function(model, by=c("rxn","met"), exclude.mets=NULL, exclude.mets.rgx="default", exclude.mets.degree=ncol(model$S), name="subSystems") {
   # create a list of reaction or metabolite ("by") sets from the "subSystems" field of a metabolic model
-  # if by metabolite, exclude.mets are the regex of high-degree mets to exclude, also can set degree cutoff with exclude.mets.degree (metabolites with degree higher than this will be excluded); the union of these two will be excluded
+  # if by metabolite, exclude.mets contains indices or IDs or mets to exclude, exclude.mets.rgx are the regex of high-degree mets to exclude, also can set degree cutoff with exclude.mets.degree (metabolites with degree higher than this will be excluded)
   by <- match.arg(by)
   if (is.null(model[[name]])) stop("subSystems not in model.\n")
   tmp <- data.table(path=model$subSystems, rxn.id=as.character(1:length(model$subSystems)))
@@ -779,10 +776,7 @@ subsystems2gsets <- function(model, by=c("rxn","met"), exclude.mets="^h[\\[_].\\
   if (by=="rxn") return(gsets)
   
   # if by metabolite, exclude metabolites
-  mets.rm <- unique(c(grep(exclude.mets, model$mets), which(apply(model$S, 1, function(x) sum(x!=0))>exclude.mets.degree)))
-  cat("The following metabolites are excluded:\n")
-  cat(paste(model$mets[mets.rm], collapse=", "), "\n")
-  
+  mets.rm <- get.exclude.mets(model, exclude.mets, exclude.mets.rgx, exclude.mets.degree)
   gsets <- lapply(gsets, function(x) {
     mets <- rxns2mets(model, as.integer(x))
     mets <- unique(unlist(mets))
@@ -794,10 +788,9 @@ pathway.gsea <- function(dflux.res, pathways, value.name="r", id.name="id") {
   # metabolic pathway enrichment with gsea, from the result of differential flux analysis with get.diff.flux or get.diff.flux.by.met
   # value.name: the variable name in dflux.res for the measure of flux difference
   # id.name: the variable name in dflux.res for the reaction/metabolite id
-  library(fgsea)
   vec <- dflux.res[[value.name]]
   names(vec) <- dflux.res[[id.name]]
-  res <- fgsea(pathways, vec, nperm=1e4)
+  res <- fgsea::fgsea(pathways, vec, nperm=1e4)
   res <- res[order(padj, pval)]
 }
 
@@ -951,7 +944,7 @@ check.mets.plot <- function(model, fluxes=rep(1, length(rxn.ids)), dfluxes=rep(0
   
   s <- model$S
   s[grep(exclude.mets, model$mets), ] <- 0
-  rxn.ids <- unique(unlist(mets2rxns(met.ids, model)))
+  rxn.ids <- unique(unlist(mets2rxns(model, met.ids)))
   # network data
   tmp <- lapply(rxn.ids, function(i) {
     from <- which(s[,i]<0)
@@ -997,15 +990,15 @@ get.dflux.for.mta <- function(de.res, topn=Inf, padj.cutoff=1.1, model, discrt=T
   names(df) <- de.res$id
   
   # map to reactions
-  vec <- exprs2rxns(df, type=1, model=model, discrt=discrt, na.replace=na.replace)
+  vec <- exprs2fluxes(model, df, type=1, return.type=ifelse(discrt,"i","c"), na2zero=na.replace)
   npos <- sum(vec>0, na.rm=TRUE)
   nneg <- sum(vec<0, na.rm=TRUE)
   if (is.infinite(topn)) {
-    cat(sprintf("All the DE genes with p.adj<%g in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", padj.cutoff, npos, nneg))
-  } else cat(sprintf("At most top %g DE genes with p.adj<%g in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", topn, padj.cutoff, npos, nneg))
+    message(sprintf("All the DE genes with p.adj<%g in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", padj.cutoff, npos, nneg))
+  } else message(sprintf("At most top %g DE genes with p.adj<%g in the model selected, mapped to %d up-regulated reactions and %d down-regulated reactions.\n", topn, padj.cutoff, npos, nneg))
 
   if (reverse.de) {
-    cat("reverse.de==TRUE, will return dflux that is to reverse the DE changes.\n")
+    message("reverse.de==TRUE, will return dflux that is to reverse the DE changes.\n")
     vec <- -vec
   }
   vec
@@ -1025,14 +1018,14 @@ discrt.exprs.for.imat <- function(dat, q.lo=0.25, q.hi=0.75, na.replace=TRUE, f=
   if (!exists("vec")) vec <- apply(mat, 1, f, na.rm=TRUE)
   vec <- vec[model$genes]
   na.idx <- is.na(vec)
-  cat(sprintf("%d model genes not in the expression data, ", sum(na.idx)))
+  message(sprintf("%d model genes not in the expression data, ", sum(na.idx)))
   qlo <- quantile(vec, q.lo, na.rm=TRUE)
   qhi <- quantile(vec, q.hi, na.rm=TRUE)
   vec <- ifelse(vec<qlo, -1L, ifelse(vec>qhi, 1L, 0L))
   if (na.replace) {
     vec[na.idx] <- 0L
-    cat("these gene values are set to 0.\n")
-  } else cat("these genes have NA values.\n")
+    message("these gene values are set to 0.\n")
+  } else message("these genes have NA values.\n")
   unname(vec)
 }
 
