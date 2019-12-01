@@ -180,10 +180,10 @@ get.exclude.mets <- function(model, mets=NULL, rgx="default", degree=ncol(model$
     exclude.mets <- unique(c(exclude.mets, emd))
   }
   # print a message about the removed metabolites
-  exclude.mets <- model$mets[exclude.mets]
-  exclude.mets <- unique(stringr::str_replace(exclude.mets, "[\\[_].\\]?$", ""))
+  tmp <- model$mets[exclude.mets]
+  tmp <- unique(stringr::str_replace(tmp, "[\\[_].\\]?$", ""))
   message("The following metabolites are excluded:")
-  message(paste(exclude.mets, collapse=", "))
+  message(paste(tmp, collapse=", "))
   exclude.mets
 }
 
