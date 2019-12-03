@@ -184,7 +184,7 @@ form.imat <- function(model, expr, params) {
   # formulate the original iMAT model
   
   # reaction data
-  rxns.int.raw <- exprs2rxns(expr, 0, model)
+  rxns.int.raw <- exprs2fluxes(model, expr, 0)
   rxns.int <- rxns.int.raw
   # remove integers for dead end rxns
   rxns.int[model$lb==0 & model$ub==0] <- 0
