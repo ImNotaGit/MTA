@@ -1,6 +1,6 @@
 library(Matrix)
 library(MASS)
-library(Rcplex.my)
+library(Rcplex2)
 library(parallel)
 library(Rcpp)
 library(RcppArmadillo)

@@ -2,7 +2,7 @@ library(data.table)
 library(Matrix)
 library(stringr)
 library(parallel)
-library(Rcplex.my)
+library(Rcplex2)
 
 
 #### ---- metabolic model utils ----

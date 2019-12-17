@@ -1,6 +1,6 @@
 library(Matrix)
 library(data.table)
-library(Rcplex.my)
+library(Rcplex2)
 # need to source utils.R
 # need to source sampling.funcs.R
 

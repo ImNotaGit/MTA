@@ -9,7 +9,7 @@ load("../mta_explore/test_Rwrapper/vrefs.RData")
 
 library(Matrix)
 library(data.table)
-library(Rcplex.my)
+library(Rcplex2)
 
 lp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
 

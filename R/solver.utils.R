@@ -1,4 +1,4 @@
-library(Rcplex.my)
+library(Rcplex2)
 
 CPX_STAT_CODE = c(
   `1`="CPX_STAT_OPTIMAL",

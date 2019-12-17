@@ -1,7 +1,7 @@
 library(data.table)
 library(Matrix)
 library(parallel)
-library(Rcplex.my)
+library(Rcplex2)
 
 lp.pars <- list(trace=0, maxcalls=5000, tilim=120, threads=1)
 

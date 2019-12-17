@@ -1,6 +1,6 @@
 library(Matrix)
 library(data.table)
-library(Rcplex.my)
+library(Rcplex2)
 library(parallel)
 # need to source utils.R
 
